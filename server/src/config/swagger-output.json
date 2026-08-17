@@ -1,0 +1,3137 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "PBMS API",
+    "version": "1.0.0",
+    "description": "Parking Building Management System (SU26SWP08). Spec **tự sinh từ route** bằng swagger-autogen.\n\n**Đăng nhập để test:** gọi `POST /api/auth/login`, copy `data.token`, bấm **Authorize** (ổ khóa) và dán token (không cần gõ \"Bearer\"). Các endpoint có ổ khóa sẽ tự gắn header `Authorization: Bearer <token>`.\n\nMọi response dạng `{ success, data, message? }` hoặc `{ success:false, error:{ code, message } }`."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Server hiện tại"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Đăng ký / đăng nhập / quên mật khẩu / Google / xác minh email"
+    },
+    {
+      "name": "System",
+      "description": "Health check"
+    },
+    {
+      "name": "Public",
+      "description": "Thông tin công khai (không cần đăng nhập)"
+    },
+    {
+      "name": "Vehicle Types",
+      "description": "Loại xe — ô tô / xe máy (Manager)"
+    },
+    {
+      "name": "Floors",
+      "description": "Tầng — gồm thiết lập nhanh & nhân bản (Manager)"
+    },
+    {
+      "name": "Zones",
+      "description": "Khu — gắn loại xe, sinh nhiều chỗ (Manager)"
+    },
+    {
+      "name": "Parking Slots",
+      "description": "Chỗ đỗ — trạng thái & khoảng cách (Manager)"
+    },
+    {
+      "name": "Gates",
+      "description": "Cổng — theo tầng + làn loại xe, in/out (Manager)"
+    },
+    {
+      "name": "Pricing Rules",
+      "description": "Bảng giá theo loại xe (Manager)"
+    },
+    {
+      "name": "Admin",
+      "description": "Quản lý tài khoản người dùng + nhật ký (Admin)"
+    },
+    {
+      "name": "Sessions",
+      "description": "Phiên gửi xe — check-in, tra cứu QR, phí (Staff)"
+    },
+    {
+      "name": "Payments",
+      "description": "Thanh toán PayOS — webhook, xác minh (User/Staff)"
+    },
+    {
+      "name": "Reports",
+      "description": "Báo cáo — doanh thu, lấp đầy, giờ cao điểm (Manager)"
+    },
+    {
+      "name": "Incidents",
+      "description": "Sự cố — Staff báo, Manager/Admin xử lý"
+    }
+  ],
+  "paths": {
+    "/api/dashboard/": {
+      "get": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/health/": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health check",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "ÄÄƒng kÃ½ (role User, email báº¯t buá»™c)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "username": "khachhang01",
+                "password": "matkhau123",
+                "fullName": "Nguyá»…n VÄƒn A",
+                "email": "a@gmail.com",
+                "phone": "0900000000"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "ÄÄƒng nháº­p (tráº£ vá» token JWT)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "username": "admin",
+                "password": "matkhau"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "ÄÄƒng nháº­p Google (ID token)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "idToken": "<google_id_token>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google-test": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Trang test Ä‘Äƒng nháº­p Google (chá»‰ dev â€” 404 á»Ÿ production)",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "QuÃªn máº­t kháº©u (gá»­i email link reset)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Äáº·t láº¡i máº­t kháº©u báº±ng token",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com",
+                "token": "<token-tá»«-email>",
+                "newPassword": "matkhaumoi"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-email": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "XÃ¡c minh email qua link (GET â†’ trang HTML)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": []
+      },
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "XÃ¡c minh email báº±ng token (POST)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com",
+                "token": "<token-tá»«-email>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/resend-verification": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Gá»­i láº¡i email xÃ¡c minh",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "ThÃ´ng tin user hiá»‡n táº¡i",
+        "description": "",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Cáº­p nháº­t há»“ sÆ¡ (há» tÃªn, SÄT, tÃ i khoáº£n ngÃ¢n hÃ ng nháº­n hoÃ n tiá»n)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "fullName": "Nguyá»…n VÄƒn A",
+                "phone": "0912345678",
+                "bankName": "Vietcombank",
+                "bankAccountNumber": "0123456789",
+                "bankAccountHolder": "NGUYEN VAN A"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google/mobile": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Trang đăng nhập Google cho mobile app (mở trong WebBrowser)",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/vehicle-types/": {
+      "get": {
+        "tags": [
+          "Vehicle Types"
+        ],
+        "summary": "Danh sách loại xe",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Vehicle Types"
+        ],
+        "summary": "Thêm loại xe (Manager)",
+        "description": "typeCode tự chuyển CHỮ HOA. slotAreaM2 = diện tích 1 chỗ (m², gộp lối đi) — dùng tính sức chứa tầng theo diện tích.",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "typeName": "Ô tô",
+                "typeCode": "CAR",
+                "slotAreaM2": 12.5
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vehicle-types/{id}": {
+      "get": {
+        "tags": [
+          "Vehicle Types"
+        ],
+        "summary": "Chi tiết loại xe",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Vehicle Types"
+        ],
+        "summary": "Sửa loại xe (Manager)",
+        "description": "Mọi field optional. typeCode tự chuyển CHỮ HOA.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "typeName": "Xe máy",
+                "typeCode": "BIKE",
+                "slotAreaM2": 2.5
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Vehicle Types"
+        ],
+        "summary": "Xóa loại xe (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/floors/": {
+      "get": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Danh sách tầng",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Thêm tầng (Manager)",
+        "description": "layoutMode: zoned (nhiều khu) hoặc single (cả tầng 1 loại xe — cần vehicleTypeId, tự tạo 1 khu mặc định). areaM2 = diện tích tầng (m²).",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorCode": "B3",
+                "floorLevel": -3,
+                "label": "Hầm B3",
+                "layoutMode": "zoned",
+                "areaM2": 800
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/floors/setup": {
+      "post": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Thiết lập nhanh tầng (Manager) — floor + zone + slot + cổng",
+        "description": "Mã khu (zoneCode) do hệ thống TỰ SINH theo <TẦNG>-<LOẠI XE>-<NN>, không cần gửi lên. floor.areaM2 = diện tích tầng (m²) để kiểm soát sức chứa.",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floor": {
+                  "floorCode": "B3",
+                  "floorLevel": -3,
+                  "label": "Hầm B3",
+                  "areaM2": 800
+                },
+                "zones": [
+                  {
+                    "vehicleTypeId": 1,
+                    "label": "Khu A ô tô",
+                    "slotCount": 40,
+                    "monthlyPassCapacity": 10,
+                    "distanceStart": 10,
+                    "distanceStep": 5
+                  }
+                ],
+                "gates": {
+                  "auto": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/floors/{id}": {
+      "get": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Chi tiết tầng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Sửa tầng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "label": "Hầm B3 mới",
+                "areaM2": 900
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Xóa tầng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/floors/{id}/clone": {
+      "post": {
+        "tags": [
+          "Floors"
+        ],
+        "summary": "Nhân bản tầng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorCode": "B4",
+                "floorLevel": -4,
+                "label": "Hầm B4"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones/": {
+      "get": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Danh sách khu",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Thêm khu (Manager) — mã khu tự sinh theo <TẦNG>-<LOẠI XE>-<NN>",
+        "description": "Mã khu do hệ thống tự sinh (không cần gửi). monthlyPassCapacity phải ≤ totalSlots. Thường tạo khu với totalSlots = 0 rồi thêm chỗ qua POST /zones/{id}/slots/bulk.",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorId": 1,
+                "vehicleTypeId": 1,
+                "label": "Khu ô tô tầng 1",
+                "totalSlots": 0,
+                "monthlyPassCapacity": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones/next-code": {
+      "get": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Xem trước mã khu sẽ sinh (theo tầng + loại xe)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/zones/{id}": {
+      "get": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Chi tiết khu",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Sửa khu (Manager)",
+        "description": "Mã khu không sửa tay (tự sinh). monthlyPassCapacity phải ≤ totalSlots của khu.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "label": "Khu ô tô tầng 1 (đổi tên)",
+                "monthlyPassCapacity": 3
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Xóa khu (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/zones/{id}/slots/bulk": {
+      "post": {
+        "tags": [
+          "Zones"
+        ],
+        "summary": "Sinh nhiều chỗ cho khu (Manager) — mã chỗ tự sinh <mã khu>-NN",
+        "description": "Mã chỗ tự sinh nối tiếp theo <mã khu>-NN (không gửi codePrefix). Chỉ tạo tối đa (total_slots − số chỗ hiện có); phần vượt trả về cappedOut.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "count": 20,
+                "distanceStart": 10,
+                "distanceStep": 5
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parking-slots/": {
+      "get": {
+        "tags": [
+          "Parking Slots"
+        ],
+        "summary": "Danh sách chỗ",
+        "description": "",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "query",
+            "description": "Lọc theo khu",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Parking Slots"
+        ],
+        "summary": "Thêm chỗ (Manager) — mã chỗ tự sinh theo <mã khu>-NN",
+        "description": "Mã chỗ do hệ thống sinh (không gửi slotCode). Khu phải còn trống (used < total_slots).",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "zoneId": 1,
+                "distanceToGate": 10
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parking-slots/next-code": {
+      "get": {
+        "tags": [
+          "Parking Slots"
+        ],
+        "summary": "Xem trước mã chỗ sẽ sinh cho khu",
+        "description": "",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/parking-slots/{id}": {
+      "get": {
+        "tags": [
+          "Parking Slots"
+        ],
+        "summary": "Chi tiết chỗ",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Parking Slots"
+        ],
+        "summary": "Sửa chỗ — gồm đổi status (Manager)",
+        "description": "Mã chỗ không sửa tay; nếu chuyển khu (zoneId) mã sẽ sinh lại theo mã khu mới.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "status": "maintenance",
+                "distanceToGate": 12
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Parking Slots"
+        ],
+        "summary": "Xóa chỗ (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/gates/scan": {
+      "post": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Kiosk cổng — quét QR mở/đóng cổng (header X-Kiosk-Key, không cần đăng nhập)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "gateId": 1,
+                "qrToken": "xxxxxxxxxxxxxxxx"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gates/exit-status": {
+      "get": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Kiosk poll trạng thái ra của phiên (header X-Kiosk-Key, không cần đăng nhập)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/gates/kiosk-list": {
+      "get": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Kiosk — danh sách cổng (header X-Kiosk-Key, không cần đăng nhập)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/gates/payment-status": {
+      "get": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Kiosk — chốt phiên sau khi trả PayOS online (header X-Kiosk-Key)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "orderCode",
+            "in": "query",
+            "required": true,
+            "description": "Mã đơn PayOS",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/gates/": {
+      "get": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Danh sách cổng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Thêm cổng (Manager) — mã cổng tự sinh theo <TẦNG>-<IN|OUT>",
+        "description": "Mã cổng do hệ thống sinh (không gửi gateCode). Mỗi tầng/tòa chỉ 1 cổng IN + 1 OUT.",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorId": 1,
+                "direction": "in",
+                "label": "Cổng vào tầng 1"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gates/{id}": {
+      "get": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Chi tiết cổng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Sửa cổng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "isActive": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Xóa cổng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/pricing-rules/": {
+      "get": {
+        "tags": [
+          "Pricing Rules"
+        ],
+        "summary": "Danh sách bảng giá",
+        "description": "",
+        "parameters": [
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "description": "Lọc theo loại xe",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Pricing Rules"
+        ],
+        "summary": "Thêm bảng giá (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "vehicleTypeId": 1,
+                "unit": 60,
+                "baseRate": 10000,
+                "effectiveFrom": "2026-01-01T00:00:00Z"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pricing-rules/{id}": {
+      "get": {
+        "tags": [
+          "Pricing Rules"
+        ],
+        "summary": "Chi tiết bảng giá",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Pricing Rules"
+        ],
+        "summary": "Sửa bảng giá (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "baseRate": 12000
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Pricing Rules"
+        ],
+        "summary": "Xóa bảng giá (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/users/roles": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Danh sách role để gán (Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/users/": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Danh sách tài khoản (Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Tạo tài khoản (Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "username": "manager01",
+                "password": "matkhau123",
+                "fullName": "Trần Thị B",
+                "email": "b@gmail.com",
+                "phone": "0900000000",
+                "roleId": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Cập nhật tài khoản — đổi role/khóa/mật khẩu (Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "fullName": "Trần Thị B",
+                "email": "b@gmail.com",
+                "phone": "0900000000",
+                "roleId": 3,
+                "isActive": true,
+                "password": "matkhaumoi"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/audit-logs/": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Nhật ký thao tác Admin — lọc & phân trang (Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Trang (mặc định 1)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Số dòng/trang (mặc định 50, tối đa 200)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "description": "Lọc theo user thực hiện",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Lọc theo hành động, vd user.create",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Từ ngày (ISO)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Đến ngày (ISO)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/refunds/": {
+      "get": {
+        "tags": [
+          "Refunds"
+        ],
+        "summary": "Danh sách yêu cầu hoàn tiền hủy vé tháng (Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "pending | refunded | expired",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/refunds/{id}/remind": {
+      "post": {
+        "tags": [
+          "Refunds"
+        ],
+        "summary": "Gửi email nhắc user cập nhật tài khoản ngân hàng (Admin)",
+        "description": "Chỉ dùng khi user CHƯA có STK. Email kèm link tới trang profile để cập nhật.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/refunds/{id}/complete": {
+      "post": {
+        "tags": [
+          "Refunds"
+        ],
+        "summary": "Đánh dấu đã chuyển khoản hoàn tiền (Admin)",
+        "description": "Admin chuyển khoản TAY xong mới bấm. Yêu cầu user đã có STK. Payment gốc chuyển refunded.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "note": "CK Vietcombank 06/07 mã GD 12345"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/refunds/{id}/process": {
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/public/pricing": {
+      "get": {
+        "tags": [
+          "Public"
+        ],
+        "summary": "Bảng giá công khai",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/public/availability": {
+      "get": {
+        "tags": [
+          "Public"
+        ],
+        "summary": "Số chỗ trống công khai",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/public/info": {
+      "get": {
+        "tags": [
+          "Public"
+        ],
+        "summary": "Thông tin tòa nhà công khai",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/sessions/active": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xe đang trong bãi (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/mine/active": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Phiên đang mở của tôi (User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/staff/lookup": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Tra cứu phiên bằng QR (Staff/Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "qrToken",
+            "in": "query",
+            "required": true,
+            "description": "Mã QR trên vé (≥16 ký tự)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/staff/resolve-checkin-qr": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Quét QR khách ở quầy CHECK-IN (Staff) — trả thông tin để điền sẵn ô nhập",
+        "description": "Nhận QR đặt chỗ hoặc vé tháng, trả về biển số + loại xe + tầng. KHÔNG tự check-in — nhân viên xác nhận rồi mới bấm.",
+        "parameters": [
+          {
+            "name": "qrToken",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/staff/identify-plate": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Gõ tay biển số ở quầy → nhận diện đặt chỗ / vé tháng (Staff)",
+        "description": "Cùng hình dạng trả về với resolve-checkin-qr. Trả null nếu biển không khớp gì — đó là khách vãng lai, không phải lỗi.",
+        "parameters": [
+          {
+            "name": "plateNumber",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Chi tiết phiên",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/checkin": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Check-in xe vào (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "vehicleTypeId": 1,
+                "floorId": 1,
+                "gateId": 1,
+                "zoneId": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/checkout": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Check-out xe ra + tính phí (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "gateId": 2,
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/cash-checkout": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Tất toán tiền mặt tại booth + mở barie (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "qrToken": "xxxxxxxxxxxxxxxx",
+                "gateId": 2,
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/preview-fee": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xem trước phí (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/plate": {
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sửa biển số phiên (Staff)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-67890"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/checkout-options": {
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Cập nhật tùy chọn checkout lố giờ/mất thẻ (Staff)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/cancel-entry": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Hủy phiên CHƯA qua cổng vào (Staff) — gỡ phiên kẹt, trả lại chỗ",
+        "description": "Chỉ dùng khi xe chưa vào bãi (gate_stage=checked_in), vd chụp ảnh hỏng hoặc khách đổi ý. Xe đã vào rồi thì phải cho ra bằng luồng xe ra.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "reason": "Chup anh loi, khach doi y"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/photos": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Tải 1 ảnh hiện trạng xe/người lái (Staff)",
+        "description": "Chụp lại cùng góc thì GHI ĐÈ ảnh cũ. Đủ 4 góc xe + ảnh người lái mới mở được barie.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Danh sách ảnh hiện trạng của phiên (Staff/Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/photos/{photoId}/file": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xem file ảnh (Staff/Admin) — mỗi lần xem đều ghi audit log",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "photoId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/": {
+      "post": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Đặt chỗ trước (User) — tạo đơn + link thanh toán PayOS",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-67890",
+                "vehicleTypeId": 1,
+                "floorId": 1,
+                "startTime": "2026-06-25T09:00:00.000Z",
+                "endTime": "2026-06-25T11:00:00.000Z"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reservations/mine": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Danh sách đặt chỗ của tôi (User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/staff/upcoming": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Đặt chỗ sắp tới (Staff/Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/staff/lookup": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Tra cứu đặt chỗ bằng QR (Staff/Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "qrToken",
+            "in": "query",
+            "required": true,
+            "description": "Mã QR trên vé (≥16 ký tự)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/checkin": {
+      "post": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Check-in xe đã đặt chỗ (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "reservationId": 1,
+                "gateId": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reservations/window-availability": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Đếm chỗ còn trống trong khung giờ (User) — preview trước khi đặt",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "shiftId",
+            "in": "query",
+            "description": "morning|afternoon|evening|overnight (đi kèm arrivalDate)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "arrivalDate",
+            "in": "query",
+            "description": "YYYY-MM-DD (đi với shiftId)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "description": "ISO — thay cho ca, đi với endTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "description": "ISO — đi với startTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "zoneId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/suggest-slot": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Gợi ý chỗ đỗ tốt nhất trong khung giờ (User) — preview",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "shiftId",
+            "in": "query",
+            "description": "morning|afternoon|evening|overnight (đi kèm arrivalDate)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "arrivalDate",
+            "in": "query",
+            "description": "YYYY-MM-DD (đi với shiftId)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "description": "ISO — thay cho ca, đi với endTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "description": "ISO — đi với startTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "zoneId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "topN",
+            "in": "query",
+            "description": "Số ứng viên trả về (1–10, mặc định 5)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/refund-policy": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Chính sách hoàn phí hủy đặt chỗ (đọc từ settings, cho modal hủy của User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/{id}": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Chi tiết đặt chỗ",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Hủy đặt chỗ + hoàn phí (User)",
+        "description": "Đơn ĐÃ trả phí và hủy trước cutoff (có hoàn tiền) thì BẮT BUỘC kèm tài khoản nhận hoàn: bankName, bankAccountNumber, bankAccountHolder — thiếu trả 400 BANK_INFO_REQUIRED. Hồ sơ đã lưu đủ 3 trường thì được dùng lại, khỏi gửi. Đơn chưa trả tiền / hủy sát giờ: không cần.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "bankName": "Vietcombank",
+                "bankAccountNumber": "0123456789",
+                "bankAccountHolder": "NGUYEN VAN A"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reservations/{id}/repay": {
+      "post": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Trả tiếp phí giữ chỗ cho đơn pending (User) — tạo lại link PayOS",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/": {
+      "post": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Mua vé tháng (User) — tạo đơn + link thanh toán PayOS",
+        "description": "Vé cố định 1 tháng; ngày kết thúc + khung giờ (theo giờ mở cửa tòa) do server tự tính.",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-67890",
+                "vehicleTypeId": 1,
+                "floorId": 1,
+                "startDate": "2026-07-01"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Danh sách vé tháng (Staff/Manager) — lọc status/tầng/biển số",
+        "description": "",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "pending | active | expired | cancelled",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "floorId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "plate",
+            "in": "query",
+            "description": "Tìm gần đúng theo biển số",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/mine": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Vé tháng của tôi (User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/capacity": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Sức chứa vé tháng còn lại theo tầng + loại xe",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/refund-policy": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Chính sách hoàn tiền hủy vé tháng (đọc từ settings, cho modal hủy vé User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Hủy vé tháng (User, chủ vé) — tính % hoàn theo chính sách",
+        "description": "Trước ngày hiệu lực hoàn 100%; 3 ngày đầu 70%; tới hết nửa thời hạn 50%; quá nửa không hoàn. Còn % hoàn → BẮT BUỘC kèm tài khoản nhận hoàn: bankName, bankAccountNumber, bankAccountHolder (thiếu trả 400 BANK_INFO_REQUIRED; hồ sơ đã lưu đủ 3 trường thì được dùng lại).",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "bankName": "Vietcombank",
+                "bankAccountNumber": "0123456789",
+                "bankAccountHolder": "NGUYEN VAN A"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/{id}/repay": {
+      "post": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Lấy lại link thanh toán cho vé pending (User, chủ vé)",
+        "description": "Link PayOS cũ còn hiệu lực thì trả lại; hết hiệu lực thì đánh dấu payment cũ failed và sinh link + payment mới. Trả về { checkoutUrl, reused }.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/{id}": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Chi tiết vé tháng (chủ vé hoặc Staff)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/payments/webhook": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Webhook PayOS (PayOS gọi — không cần đăng nhập)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "code": "00",
+                "data": {
+                  "orderCode": 123
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/verify": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Xác minh thanh toán sau khi PayOS redirect về",
+        "description": "",
+        "parameters": [
+          {
+            "name": "orderCode",
+            "in": "query",
+            "required": true,
+            "description": "Mã đơn PayOS",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/payments/{id}": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Chi tiết thanh toán",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/occupancy": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Tỷ lệ lấp đầy hiện tại (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/overview": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Tổng quan: doanh thu + lưu lượng vào/ra + lấp đầy theo khoảng ngày (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Từ ngày (ISO8601)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Đến ngày (ISO8601)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/incidents/": {
+      "get": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Danh sách sự cố — Staff chỉ thấy của mình, Admin thấy tất cả",
+        "description": "",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "open | investigating | resolved",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Lọc theo loại sự cố",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Trang (mặc định 1)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Số dòng/trang (tối đa 200)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Tạo sự cố (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "type": "wrong_info",
+                "description": "Khách báo sai biển số",
+                "sessionId": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{id}/status": {
+      "patch": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Cập nhật trạng thái sự cố (Admin) — mọi sự cố dồn về Admin xử lý",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "status": "resolved"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/customer": {
+      "post": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Khách hàng gửi báo cáo sự cố kèm ảnh",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/incidents/{id}/photo": {
+      "get": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Stream ảnh sự cố của khách hàng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/incidents/feedback": {
+      "post": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Khách hàng gửi phản hồi / khiếu nại (có ảnh đính kèm tùy chọn)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "example": "any"
+                  },
+                  "category": {
+                    "example": "any"
+                  },
+                  "sessionId": {
+                    "example": "any"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/mine": {
+      "get": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Lịch sử phản hồi / sự cố do chính người dùng gửi",
+        "description": "",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/settings/system": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Đọc cấu hình hệ thống (Manager/Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Cập nhật cấu hình hệ thống (Manager/Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "booking_fee": 20000,
+                "monthly_pass_price": 500000,
+                "lost_ticket_fee": 50000,
+                "overstay_fee": 30000,
+                "max_parking_hours": 24,
+                "pass_refund_trial_days": 3,
+                "pass_refund_trial_percent": 70,
+                "pass_refund_half_term_percent": 50,
+                "pass_refund_bank_info_ttl_days": 7
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}
