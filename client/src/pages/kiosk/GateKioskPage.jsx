@@ -1,0 +1,403 @@
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Camera } from 'lucide-react';
+import { kioskApi } from '../../api/kiosk';
+import { inputClass } from '../../components/ui/Input';
+import QrScanner from '../../components/QrScanner';
+import { formatFloorLabel } from '../../lib/floor';
+
+// Màn kiosk PUBLIC gắn trên cổng (không đăng nhập, xác thực bằng kiosk key).
+// Khách áp/nhập mã QR -> cổng tự quyết: mở barie (OPEN) hoặc yêu cầu thanh toán online
+// (PAYMENT_REQUIRED). Thu TIỀN MẶT là việc của chốt staff (tab "Thu tiền mặt" trang /staff).
+
+const STAGE_LABEL = {
+  'building-in': 'Đã vào tòa nhà',
+  'floor-in': 'Đã vào tầng — đã ghi phiên gửi xe',
+  'floor-out': 'Đã rời tầng',
+  'building-out': 'Đã ra tòa nhà',
+};
+
+const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
+
+// Kiosk là màn CỐ ĐỊNH gắn ở MỘT cổng, nhưng đi PayOS là rời trang thật: BE trả
+// returnUrl/cancelUrl = /kiosk/gate (không kèm gateId), nên lúc khách trả xong HOẶC bấm huỷ,
+// trình duyệt quay về và component mount LẠI TỪ ĐẦU -> state gateId mất -> dropdown tụt về
+// cổng đầu danh sách (thường là cổng VÀO tòa) và lượt quét kế tiếp chạy sai chiều.
+// Nhớ cổng đã chọn vào localStorage để sống sót qua vòng PayOS lẫn F5 / mất điện khởi động lại.
+const GATE_KEY = 'kiosk.gateId';
+const readSavedGate = () => {
+  const v = Number(localStorage.getItem(GATE_KEY));
+  return Number.isInteger(v) && v > 0 ? v : null;
+};
+const saveGate = (id) => {
+  if (id) localStorage.setItem(GATE_KEY, String(id));
+};
+
+// Vị trí đỗ chỉ có khi khách ĐẶT CHỖ vừa được check-in ngay tại CỔNG VÀO TÒA
+// (BE trả info.session.slot). Walk-in / các chặng khác không có -> trả null.
+const parkingSpot = (r) => {
+  const slot = r?.info?.session?.slot;
+  if (!slot?.slot_code) return null;
+  const floor = slot.zone?.floor;
+  return { floor: floor?.label || floor?.floor_code || '', slotCode: slot.slot_code };
+};
+
+export default function GateKioskPage() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const fromUrl = params.get('gateId');
+  const orderCode = params.get('orderCode'); // PayOS redirect về kèm ?orderCode=...
+  const [gates, setGates] = useState([]); // cổng tải động từ BE (kiosk-list) — thay hardcode
+  const [gatesError, setGatesError] = useState('');
+  const [gateId, setGateId] = useState(fromUrl ? Number(fromUrl) : readSavedGate());
+  const [verifying, setVerifying] = useState(Boolean(orderCode)); // đang chốt phiên PayOS?
+  const [qr, setQr] = useState('');
+  // ui = discriminator của FE (đặt tên riêng, KHÔNG trùng field `kind` BE trả về trong data).
+  const [result, setResult] = useState(null); // { ui: 'open' | 'payment' | 'error', ...d }
+  const [scanning, setScanning] = useState(false);
+  const [camOpen, setCamOpen] = useState(false); // overlay quét camera đang mở?
+  const inputRef = useRef(null);
+  const resetTimer = useRef(null);
+
+  // Sau mỗi lượt quét: focus lại ô input cho xe tiếp theo.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [result]);
+
+  // Dọn timer khi unmount.
+  useEffect(() => () => clearTimeout(resetTimer.current), []);
+
+  const scheduleReset = (ms) => {
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setResult(null), ms);
+  };
+
+  /**
+   * Màn BARIE MỞ nên đứng bao lâu trước khi về màn chờ.
+   *
+   * Cổng RA để lâu nhất: đó là nơi khách đọc số tiền vừa trả (hoặc thấy "vé tháng — miễn phí").
+   * Ở cổng ra, màn này còn có thể bật lên KHI KHÁCH KHÔNG ĐỨNG NHÌN — vừa nhập ảnh xong ở quầy
+   * là nó tự chuyển — nên 5-6 giây là chớp mắt đã mất, không ai kịp thấy chuyện gì đã xảy ra.
+   */
+  const openHoldMs = (d) => {
+    if (d?.stage === 'building-out') return 15000;
+    return d?.slotId ? 9000 : 5000; // vào bãi: có số chỗ đỗ thì để lâu hơn cho khách đọc
+  };
+
+  // Tải danh sách cổng động (BE /gates/kiosk-list, xác thực bằng kiosk key) — bỏ hardcode.
+  // Thứ tự ưu tiên chọn cổng: ?gateId trên URL > cổng đã lưu > cổng đầu danh sách.
+  // Luôn lưu lại cổng chốt được: kiosk pin sẵn URL ?gateId=... đi PayOS về cũng mất query,
+  // có bản lưu thì lần mount sau vẫn đúng cổng. Cổng lưu mà không còn trong list (manager đã
+  // xoá) thì rơi về list[0] và bản lưu được ghi đè luôn cho sạch.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await kioskApi.listGates();
+        const list = data.data || [];
+        if (!alive) return;
+        setGates(list);
+        const wanted = fromUrl ? Number(fromUrl) : readSavedGate();
+        const next = list.some((g) => g.gate_id === wanted) ? wanted : (list[0]?.gate_id ?? null);
+        setGateId(next);
+        saveGate(next);
+      } catch {
+        if (alive) setGatesError('Không tải được danh sách cổng. Kiểm tra kết nối rồi tải lại trang.');
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // PayOS redirect về /kiosk/gate?orderCode=... → CHỐT phiên đã trả online (BE verify thật,
+  // idempotent). Poll tới khi paid → hiện BARIE MỞ; nếu huỷ/hết hạn/timeout → mời quét lại.
+  // Xoá orderCode khỏi URL khi xong để refresh không gọi lại.
+  useEffect(() => {
+    if (!orderCode) return undefined;
+    let stop = false;
+    let tries = 0;
+    const finish = (res) => {
+      if (stop) return;
+      setResult(res);
+      setVerifying(false);
+      scheduleReset(6000);
+      navigate('/kiosk/gate', { replace: true });
+    };
+    const tick = async () => {
+      tries += 1;
+      try {
+        const { data } = await kioskApi.paymentStatus(orderCode);
+        const d = data.data;
+        if (d?.paid) {
+          const s = d.session;
+          finish({ ui: 'open', stage: 'building-out', fee: s?.calculated_fee, sessionId: s?.session_id });
+          return;
+        }
+        if (d?.status === 'CANCELLED' || d?.status === 'EXPIRED') {
+          finish({ ui: 'error', message: 'Chưa thanh toán — vui lòng quét lại mã ở cổng ra.' });
+          return;
+        }
+      } catch {
+        // lỗi 1 nhịp poll — thử lại nhịp sau
+      }
+      if (stop) return;
+      if (tries >= 30) {
+        finish({ ui: 'error', message: 'Chưa xác nhận được thanh toán — vui lòng quét lại mã ở cổng ra.' });
+        return;
+      }
+      setTimeout(tick, 2000);
+    };
+    tick();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Đang ở màn "chờ thanh toán" (PAYMENT_REQUIRED) HOẶC "chờ nhân viên" (thiếu ảnh hiện trạng)
+  // → poll trạng thái phiên theo sessionId. Staff thu tiền mặt HOẶC khách trả PayOS → phiên
+  // 'completed' → kiosk TỰ MỞ BARIE.
+  //
+  // Nhánh 'waiting' quan trọng không kém: xe bị chặn vì thiếu ảnh mà kiosk chỉ báo đỏ rồi về
+  // màn chờ thì khách đứng trước màn hình trống, không biết chuyện gì đang xảy ra — trong khi
+  // nhân viên đang chụp ảnh và thu tiền cho chính xe đó ở quầy.
+  useEffect(() => {
+    if (!['payment', 'waiting'].includes(result?.ui) || !result.sessionId) return undefined;
+    const sid = result.sessionId;
+    const waitingToken = result.ui === 'waiting' ? result.qrToken : null;
+    const timer = setInterval(async () => {
+      try {
+        const { data } = await kioskApi.exitStatus(sid);
+        if (data.data?.paid) {
+          clearInterval(timer);
+          setResult({ ui: 'open', stage: 'building-out', fee: data.data.fee, sessionId: sid });
+          scheduleReset(openHoldMs({ stage: 'building-out' }));
+          return;
+        }
+      } catch {
+        // lỗi 1 nhịp poll không sao — nhịp sau thử lại
+      }
+
+      // Màn CHỜ: quét lại giúp khách. Không thể chỉ đợi 'paid' — xe vé tháng ra 0đ thì chẳng
+      // ai phải trả đồng nào, chính cú quét mới là thứ chốt phiên và mở barie; đợi 'paid' là
+      // đợi một sự kiện không bao giờ tới.
+      if (!waitingToken) return;
+      try {
+        const { data } = await kioskApi.scan(gateId, waitingToken);
+        const d = data.data;
+        clearInterval(timer);
+        if (d.action === 'PAYMENT_REQUIRED') {
+          setResult({ ...d, ui: 'payment' });
+        } else {
+          setResult({ ...d, ui: 'open' });
+          scheduleReset(openHoldMs(d));
+        }
+      } catch {
+        // vẫn chưa đủ ảnh -> ở lại màn chờ, nhịp sau thử tiếp
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [result]);
+
+  // Xử lý 1 mã QR (từ ô nhập tay HOẶC từ camera) — cổng tự quyết mở / yêu cầu thanh toán.
+  const runScan = async (raw) => {
+    const token = String(raw || '').trim();
+    if (!token || scanning || !gateId) return;
+    setScanning(true);
+    // Huỷ timer auto-ẩn còn sót từ lượt quét OPEN trước (mỗi lần quét là 1 hành động mới) —
+    // tránh nó fire trễ và xoá nhầm popup "CẦN THANH TOÁN" (ui='payment' cố ý không tự ẩn).
+    clearTimeout(resetTimer.current);
+    setResult(null);
+    try {
+      const { data } = await kioskApi.scan(gateId, token);
+      const d = data.data;
+      if (d.action === 'PAYMENT_REQUIRED') {
+        setResult({ ...d, ui: 'payment' }); // ...d TRƯỚC, ui SAU -> không bị field `kind` của BE ghi đè
+      } else {
+        setResult({ ...d, ui: 'open' });
+        scheduleReset(openHoldMs(d));
+      }
+    } catch (err) {
+      const e = err.response?.data?.error;
+
+      // THIẾU ẢNH HIỆN TRẠNG: không phải lỗi của khách và cũng không phải ngõ cụt — nhân viên
+      // đang nhập ảnh cho chính xe này ở quầy. Đứng lại theo dõi phiên thay vì báo đỏ rồi tắt:
+      // xong ảnh + xong tiền là màn này tự chuyển sang BARIE MỞ, khách không phải quét lại.
+      if (e?.code === 'PHOTO_REQUIRED' && e.details?.sessionId) {
+        setResult({
+          ui: 'waiting',
+          sessionId: e.details.sessionId,
+          qrToken: token, // giữ mã để tự quét lại giúp khách khi nhân viên nhập xong ảnh
+          captured: e.details.captured,
+          total: e.details.total,
+        });
+        return; // KHÔNG hẹn giờ tắt — màn này chờ tới khi phiên xong
+      }
+
+      // Vé tháng quét ngoài khung giờ -> hướng khách qua quầy. Các lỗi vé khác BE đã trả
+      // error.message tiếng Việt sẵn (vé không active/ngoài hạn...) nên hiện nguyên văn.
+      const message = e?.code === 'PASS_OUTSIDE_WINDOW'
+        ? 'Vé tháng ngoài khung giờ — vui lòng qua quầy gặp nhân viên.'
+        : e?.message || 'Mã không hợp lệ hoặc lỗi hệ thống';
+      setResult({ ui: 'error', message });
+      scheduleReset(6000);
+    } finally {
+      setQr(''); // clear ô input sau mỗi lượt
+      setScanning(false);
+    }
+  };
+
+  const handleScan = (e) => {
+    e.preventDefault();
+    runScan(qr);
+  };
+
+  // Chỉ hiện hộp "chỗ đã giữ" ở CỔNG VÀO TÒA. session.slot vẫn còn nguyên sau checkout
+  // (nhả chỗ chỉ đổi status của slot, không xóa liên kết) nên nếu không chặn theo stage,
+  // hộp này sẽ hiện NHẦM ở cổng ra cho mọi phiên (vé tháng, đặt chỗ, walk-in) — sai ý nghĩa
+  // vì lúc đó khách đang RỜI chỗ đó chứ không phải được dẫn tới.
+  const spot = result?.ui === 'open' && result.stage === 'building-in' ? parkingSpot(result) : null;
+  // Ra cổng tòa mà vé tháng miễn phí lượt này (BE trả passCovered) -> báo rõ 0đ, tránh im lặng
+  // hoặc hiện nhầm hộp "chỗ đã giữ" ở trên.
+  const passFreeExit = result?.ui === 'open' && result.stage === 'building-out' && result.info?.passCovered;
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-slate-900 p-6 text-white">
+      {/* Chọn cổng kiosk đang gắn */}
+      <div className="flex items-center gap-3 text-sm text-slate-300">
+        <span>Cổng:</span>
+        <select
+          className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-white focus:border-brand focus:outline-none disabled:opacity-50"
+          value={gateId ?? ''}
+          disabled={gates.length === 0}
+          onChange={(e) => {
+            const id = Number(e.target.value);
+            setGateId(id);
+            saveGate(id); // nhớ luôn, để đi PayOS về không tụt lại cổng đầu danh sách
+            setResult(null);
+          }}
+        >
+          {gates.length === 0 ? (
+            <option value="">{gatesError ? 'Lỗi tải cổng' : 'Đang tải cổng…'}</option>
+          ) : (
+            gates.map((g) => (
+              <option key={g.gate_id} value={g.gate_id}>
+                {g.label ? `${g.gate_code} — ${g.label}` : g.gate_code}
+              </option>
+            ))
+          )}
+        </select>
+        {gatesError && <span className="text-red-400">{gatesError}</span>}
+      </div>
+
+      {/* Khu kết quả lớn (nhìn từ xa) */}
+      <div className="flex min-h-64 w-full max-w-xl items-center justify-center">
+        {verifying && !result ? (
+          <div className="text-center text-amber-300">
+            <div className="animate-pulse text-6xl">⏳</div>
+            <p className="mt-4 text-2xl font-medium">Đang xác nhận thanh toán…</p>
+            <p className="mt-2 text-sm text-slate-400">Vui lòng đợi, đừng rời màn hình.</p>
+          </div>
+        ) : !result ? (
+          <div className="text-center text-slate-400">
+            <div className="text-6xl">⤿</div>
+            <p className="mt-4 text-2xl font-medium">Mời áp / nhập mã QR</p>
+          </div>
+        ) : result.ui === 'open' ? (
+          <div className="w-full rounded-3xl bg-emerald-500 p-10 text-center text-white shadow-2xl">
+            <div className="text-7xl">✓</div>
+            <p className="mt-4 text-4xl font-bold tracking-wide">BARIE MỞ</p>
+            <p className="mt-2 text-xl text-emerald-50">{STAGE_LABEL[result.stage] || result.stage}</p>
+            {spot && (
+              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-white/15 px-6 py-4">
+                <p className="text-base text-emerald-50">Mời tới chỗ đỗ đã giữ</p>
+                <p className="mt-1 text-3xl font-extrabold tracking-wide">
+                  {spot.floor ? `${formatFloorLabel(spot.floor)} · ` : ''}Chỗ {spot.slotCode}
+                </p>
+              </div>
+            )}
+            {passFreeExit && (
+              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-white/15 px-6 py-4">
+                <p className="text-base text-emerald-50">Xe có vé tháng — miễn phí lượt gửi này</p>
+                <p className="mt-1 text-3xl font-extrabold tracking-wide">VÉ THÁNG · {fmtMoney(0)}</p>
+              </div>
+            )}
+          </div>
+        ) : result.ui === 'waiting' ? (
+          /* Thiếu ảnh hiện trạng — nhân viên đang xử lý cho chính xe này. Màn này KHÔNG tự tắt;
+             nó bám theo phiên và tự chuyển sang BARIE MỞ khi nhân viên xong ảnh + xong tiền. */
+          <div className="w-full rounded-3xl bg-sky-500 p-10 text-center text-white shadow-2xl">
+            <div className="animate-pulse text-7xl">⏳</div>
+            <p className="mt-4 text-3xl font-bold">ĐANG CHỜ NHÂN VIÊN</p>
+            <p className="mt-3 text-xl text-sky-50">
+              Bãi có ghi hình hiện trạng xe khi ra. Nhân viên đang chụp ảnh và tất toán cho xe của bạn.
+            </p>
+            {result.total > 0 && (
+              <p className="mt-4 text-lg text-sky-100">Ảnh đã chụp: {result.captured}/{result.total}</p>
+            )}
+            <p className="mt-4 text-base text-sky-100">Xong là barie tự mở — bạn không cần quét lại.</p>
+            <button type="button" onClick={() => setResult(null)} className="mt-4 text-sm font-medium text-sky-50 underline">
+              Quét mã khác
+            </button>
+          </div>
+        ) : result.ui === 'payment' ? (
+          <div className="w-full rounded-3xl bg-amber-400 p-10 text-center text-amber-950 shadow-2xl">
+            <p className="text-3xl font-bold">CẦN THANH TOÁN</p>
+            <p className="mt-3 text-5xl font-extrabold">{fmtMoney(result.fee)}</p>
+            <a
+              href={result.checkoutUrl}
+              className="mt-6 inline-block rounded-xl bg-amber-950 px-8 py-3 text-lg font-semibold text-white hover:bg-amber-900"
+            >
+              Thanh toán online
+            </a>
+            <p className="mt-4 text-sm text-amber-900">Sau khi trả xong, quét lại mã ở cổng ra để mở barie. (Trả tiền mặt: tới chốt nhân viên.)</p>
+            <button type="button" onClick={() => setResult(null)} className="mt-2 text-sm font-medium text-amber-900 underline">
+              Quét lại
+            </button>
+          </div>
+        ) : (
+          <div className="w-full rounded-3xl bg-red-500 p-10 text-center text-white shadow-2xl">
+            <div className="text-7xl">✕</div>
+            <p className="mt-4 text-2xl font-semibold">{result.message}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Ô quét/nhập mã QR */}
+      <form onSubmit={handleScan} className="flex w-full max-w-xl gap-3">
+        <input
+          ref={inputRef}
+          className={`${inputClass} bg-white text-slate-900`}
+          value={qr}
+          onChange={(e) => setQr(e.target.value)}
+          placeholder="Áp đầu đọc hoặc dán mã QR rồi Enter..."
+          autoFocus
+        />
+        <button
+          type="submit"
+          disabled={scanning || verifying || !gateId || !qr.trim()}
+          className="shrink-0 rounded-lg bg-brand px-6 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {scanning ? 'Đang quét...' : 'Quét'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setCamOpen(true)}
+          disabled={scanning || verifying || !gateId}
+          className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+          title="Quét QR bằng camera"
+        >
+          <Camera className="h-5 w-5" />
+          <span className="hidden sm:inline">Camera</span>
+        </button>
+      </form>
+
+      <p className="text-xs text-slate-500">Kiosk cổng — màn tự phục vụ. Mỗi cổng tự suy hành động theo tòa/tầng × chiều.</p>
+
+      {camOpen && (
+        <QrScanner
+          onClose={() => setCamOpen(false)}
+          onScan={(token) => { setCamOpen(false); runScan(token); }}
+        />
+      )}
+    </div>
+  );
+}
