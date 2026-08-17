@@ -1,0 +1,691 @@
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
+import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard, SearchX } from 'lucide-react';
+import { reservationsApi } from '../../api/reservations';
+import { formatShiftLabel } from '../../lib/shifts';
+import { formatFloorLabel } from '../../lib/floor';
+import { collectFloorOptions, inDateRange, matchPlate } from '../../lib/filters';
+import PageHeader from '../../components/ui/PageHeader';
+import Card from '../../components/ui/Card';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+import EmptyState from '../../components/ui/EmptyState';
+import FilterBar, { DateRangeField, SearchField, SelectField } from '../../components/ui/FilterBar';
+import { TableSkeleton } from '../../components/ui/Skeleton';
+import { ErrorAlert } from '../../components/ui/Field';
+import Modal, { ModalActions } from '../../components/ui/Modal';
+import { toast } from '../../components/ui/toast';
+import RefundBankFields from '../../components/RefundBankFields';
+import { validateBankInfo } from '../../lib/validate';
+import { useAuth } from '../../context/AuthContext';
+
+const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
+
+const fmtDateTime = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const paidPaymentOf = (r) =>
+  (r.payments || []).find((p) => p.status === 'success' || p.status === 'refunded') || null;
+
+// Vị trí đỗ: tầng · khu · chỗ (lấy theo dữ liệu có sẵn trong đơn).
+const formatLocation = (r) => {
+  const floor = r.floor?.label || r.floor?.floor_code;
+  const parts = [
+    floor && formatFloorLabel(floor),
+    r.zone?.zone_code && `Khu ${r.zone.zone_code}`,
+    r.slot?.slot_code && `Chỗ ${r.slot.slot_code}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Hệ thống sẽ gán chỗ trống tốt nhất';
+};
+
+const isCancellable = (status) => status === 'pending' || status === 'confirmed';
+
+// Số từ BE: chỉ nhận số hữu hạn ≥ 0, còn lại trả null để chỗ hiển thị rơi về câu chữ chung
+// thay vì bịa ra "0%" hay "NaN giờ".
+const readNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+// Mốc hoàn phí BE trả về theo GIỜ và có thể lẻ → đổi ra nhãn tiếng Việt:
+// 1 → "1 giờ", 0.5 → "30 phút", 1.5 → "1 giờ 30 phút". Trả '' khi không phải số dương
+// (chưa đọc được, hoặc bãi tắt mốc bằng 0) để chỗ hiển thị tự rơi về câu chữ khác.
+const formatCutoff = (hours) => {
+  const mins = Math.round(Number(hours) * 60);
+  if (!Number.isFinite(mins) || mins <= 0) return '';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (!h) return `${m} phút`;
+  return m ? `${h} giờ ${m} phút` : `${h} giờ`;
+};
+
+// QR còn mở được barie (đơn còn "sống"): confirmed = chờ vào, checked_in = xe đang trong bãi
+// nhưng vẫn phải quét chính mã đó ở cổng tầng + cổng ra khi rời bãi.
+const QR_LIVE_STATUSES = ['confirmed', 'checked_in'];
+// QR chỉ còn để tra cứu (đơn đã khép): mở ra sẽ bị cổng từ chối 409.
+const QR_HISTORY_STATUSES = ['completed', 'cancelled', 'no_show'];
+// Nhãn đè lên mã QR lịch sử cho biết vì sao nó vô hiệu.
+const QR_HISTORY_LABEL = {
+  completed: 'Đã hoàn tất',
+  cancelled: 'Đã hủy',
+  no_show: 'Không đến',
+};
+
+// Nhãn trạng thái cho dropdown lọc — giữ đúng chữ trên Badge của từng đơn để
+// người dùng chọn được cái họ đang nhìn thấy.
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Chờ xử lý' },
+  { value: 'confirmed', label: 'Đã xác nhận' },
+  { value: 'checked_in', label: 'Đã vào bãi' },
+  { value: 'completed', label: 'Hoàn tất' },
+  { value: 'cancelled', label: 'Đã hủy' },
+  { value: 'no_show', label: 'Không đến' },
+];
+
+// Khoảng ngày lọc theo mốc nào: ngày bấm đặt hay ngày đi gửi xe.
+const DATE_FIELD_OPTIONS = [
+  { value: 'created_at', label: 'Ngày tạo đơn' },
+  { value: 'start_time', label: 'Ngày vào bãi' },
+];
+
+const emptyFilters = { plate: '', status: '', floorId: '', dateField: 'created_at', from: '', to: '' };
+
+const emptyBankForm = { bankName: '', bankAccountNumber: '', bankAccountHolder: '' };
+
+export default function MyReservationsPage() {
+  const [searchParams] = useSearchParams();
+  const { user, updateUser } = useAuth();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [repayingId, setRepayingId] = useState(null);
+  const [refundPolicy, setRefundPolicy] = useState(null); // null = chưa đọc được → modal nói chung chung
+  const [filters, setFilters] = useState(emptyFilters);
+  const [bankForm, setBankForm] = useState(emptyBankForm);
+  const [bankErrors, setBankErrors] = useState({});
+  // BE trả 400 BANK_INFO_REQUIRED (đơn CÓ hoàn mà FE đoán là không) → ép hiện + bắt buộc ô STK.
+  const [bankRequiredByServer, setBankRequiredByServer] = useState(false);
+  // Mốc thời gian lúc MỞ modal — so với start_time để biết còn trước cutoff không.
+  // Chốt một lần thay vì gọi Date.now() khi render: render phải thuần, và mốc nhảy giữa chừng
+  // sẽ làm ô STK tự ẩn/hiện ngay dưới tay khách đang gõ.
+  const [cancelOpenedAt, setCancelOpenedAt] = useState(0);
+
+  // Mốc giờ + % hoàn Manager chỉnh được, KHÔNG hardcode. Chưa đọc được → null.
+  const cutoffHours = readNum(refundPolicy?.cutoffHours);
+  const refundPercent = readNum(refundPolicy?.refundPercent);
+  const cutoffText = formatCutoff(cutoffHours);
+
+  // Hủy đơn này có sinh tiền hoàn không → có thì phải hỏi STK ngay tại modal.
+  // Chỉ chắc chắn khi ĐỌC ĐƯỢC chính sách; chưa đọc được thì vẫn hiện ô (đơn đã trả phí có thể
+  // được hoàn) nhưng KHÔNG bắt buộc phía FE — để BE phán, tránh chặn oan lần hủy không hoàn.
+  const paidTarget = cancelTarget?.status === 'confirmed';
+  const expectsRefund = useMemo(() => {
+    if (!paidTarget || cutoffHours == null || refundPercent == null) return null; // null = chưa biết
+    if (refundPercent <= 0) return false;
+    const msUntilStart = new Date(cancelTarget.start_time).getTime() - cancelOpenedAt;
+    return msUntilStart >= cutoffHours * 60 * 60 * 1000;
+  }, [paidTarget, cancelTarget, cutoffHours, refundPercent, cancelOpenedAt]);
+
+  const showBankFields = paidTarget && (expectsRefund !== false || bankRequiredByServer);
+  const bankRequired = bankRequiredByServer || expectsRefund === true;
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  // dateField luôn có giá trị nên không tính là "đang lọc" — chỉ khoảng ngày mới tính.
+  const filterActive = Boolean(
+    filters.plate || filters.status || filters.floorId || filters.from || filters.to,
+  );
+
+  const floorOptions = useMemo(
+    () => collectFloorOptions(items, (r) => r.floor).map((f) => ({ value: String(f.id), label: formatFloorLabel(f.label) })),
+    [items],
+  );
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (r) =>
+          matchPlate(r.plate_number, filters.plate) &&
+          (!filters.status || r.status === filters.status) &&
+          (!filters.floorId || String(r.floor?.floor_id) === filters.floorId) &&
+          inDateRange(r[filters.dateField], filters.from, filters.to),
+      ),
+    [items, filters],
+  );
+
+  const load = useCallback(async (mode = 'initial') => {
+    if (mode === 'manual') setRefreshing(true);
+    else setLoading(true);
+    try {
+      const { data } = await reservationsApi.listMine();
+      setItems(data.data ?? []);
+      setError('');
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Không tải được danh sách đặt chỗ');
+    } finally {
+      if (mode === 'manual') setRefreshing(false);
+      else setLoading(false);
+    }
+  }, []);
+
+  // PayOS redirect quay về /reservations?status=...|cancel=... (returnUrl/cancelUrl cố định ở BE).
+  // Suy ra kết quả để đưa sang trang hứng riêng — thành công (PAID) hay thất bại (cancel/CANCELLED).
+  const paymentResult = useMemo(() => {
+    const orderCode = searchParams.get('orderCode');
+    const status = searchParams.get('status');
+    const cancelled = searchParams.get('cancel') === 'true' || status === 'CANCELLED';
+    if (!orderCode && !cancelled) return null;
+    return { type: cancelled ? 'failed' : 'success', orderCode: orderCode || '' };
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (paymentResult) return; // Đang chuyển sang trang kết quả — khỏi tải danh sách.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load('initial');
+  }, [load, paymentResult]);
+
+  // Mở modal hủy đơn đã thanh toán → đọc chính sách hoàn THẬT (mốc giờ + % hoàn) từ
+  // GET /reservations/refund-policy thay vì hardcode "1 giờ / 100%": Manager đổi cấu hình
+  // thì chữ trên màn đổi theo. Đọc lại MỖI LẦN mở modal (không cache theo phiên) để bãi đổi
+  // giữa chừng vẫn hiện đúng; giá trị cũ được giữ trong lúc gọi nên không chớp chữ. Lỗi thì nuốt.
+  useEffect(() => {
+    if (!cancelTarget || cancelTarget.status === 'pending') return undefined;
+    let active = true;
+    reservationsApi
+      .refundPolicy()
+      .then((res) => {
+        if (active && res.data.data) setRefundPolicy(res.data.data);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [cancelTarget]);
+
+  // Mở modal hủy: seed ô STK từ hồ sơ (khách đã lưu thì khỏi gõ lại), dọn lỗi lần trước và
+  // chốt mốc thời gian để tính còn trước cutoff hay không.
+  const openCancel = (item) => {
+    setBankForm({
+      bankName: user?.bankName ?? '',
+      bankAccountNumber: user?.bankAccountNumber ?? '',
+      bankAccountHolder: user?.bankAccountHolder ?? '',
+    });
+    setBankErrors({});
+    setBankRequiredByServer(false);
+    setCancelOpenedAt(Date.now());
+    setCancelTarget(item);
+  };
+
+  // Khách bấm "back" từ PayOS → trang khôi phục từ bfcache, spinner "Trả tiếp" còn kẹt.
+  // Reset lại state khi trang quay lại từ bfcache để nút dùng được ngay (khỏi F5).
+  useEffect(() => {
+    const onPageShow = (e) => {
+      if (e.persisted) setRepayingId(null);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  // "Trả tiếp": xin BE link PayOS MỚI cho đơn pending rồi điều hướng sang.
+  const handleRepay = async (r) => {
+    if (repayingId) return;
+    setRepayingId(r.reservation_id);
+    try {
+      const { data } = await reservationsApi.repay(r.reservation_id);
+      const info = data.data || {};
+      // Khách đã trả tiền nhưng webhook chưa về: BE hỏi PayOS thấy PAID → tự xác nhận đơn,
+      // không phát link mới. Không được điều hướng sang PayOS lần nữa (tránh trả 2 lần).
+      if (info.alreadyPaid || !info.checkoutUrl) {
+        toast.success('Đơn đã được thanh toán — đang cập nhật trạng thái');
+        await load('manual');
+        return;
+      }
+      toast.success('Chuyển sang thanh toán phí giữ chỗ');
+      window.location.assign(info.checkoutUrl);
+    } catch (err) {
+      const status = err.response?.status;
+      const msg = err.response?.data?.error?.message;
+      if (status === 409 || status === 404) {
+        // Đơn không còn pending / không tồn tại / khung giờ đã kết thúc → làm mới danh sách.
+        toast.error(msg || 'Đơn không còn ở trạng thái chờ thanh toán');
+        await load('manual');
+      } else {
+        // 403 (không phải đơn của mình) hoặc 502 (PayOS lỗi / chưa hủy được link cũ) — cho bấm lại.
+        toast.error(msg || 'Chưa tạo lại được liên kết thanh toán — vui lòng thử lại');
+      }
+    } finally {
+      setRepayingId(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!cancelTarget || cancelLoading) return;
+
+    // Đơn chắc chắn CÓ hoàn → chặn tại chỗ, khỏi gửi lên rồi nhận 400.
+    const sendBank = showBankFields || bankRequiredByServer;
+    if (bankRequired) {
+      const errors = validateBankInfo(bankForm);
+      setBankErrors(errors);
+      if (Object.keys(errors).length) return;
+    }
+
+    setCancelLoading(true);
+    try {
+      const { data } = await reservationsApi.cancel(
+        cancelTarget.reservation_id,
+        sendBank ? bankForm : undefined,
+      );
+      const refund = data.data?.refund;
+      let msg = 'Đã hủy đặt chỗ — chỗ đã được trả lại bãi';
+      if (refund?.eligible) {
+        msg = refund.instructions
+          || `Đã hủy — sẽ hoàn ${fmtMoney(refund.amount)} phí giữ chỗ (xử lý trong vài ngày)`;
+        // STK vừa nhập đã được BE lưu vào hồ sơ → đồng bộ context để lần hủy sau seed đúng.
+        if (sendBank) {
+          updateUser({
+            ...user,
+            bankName: bankForm.bankName.trim(),
+            bankAccountNumber: bankForm.bankAccountNumber.trim(),
+            bankAccountHolder: bankForm.bankAccountHolder.trim(),
+          });
+        }
+      } else if (refund?.applicable) {
+        // % hoàn = 0 (bãi tắt hoàn) thì lý do KHÔNG phải "sát giờ" → ưu tiên câu BE trả về.
+        msg = data.message || 'Đã hủy — phí giữ chỗ không được hoàn theo chính sách hiện hành';
+      }
+      toast.success(msg);
+      setCancelTarget(null);
+      await load('manual');
+    } catch (err) {
+      const code = err.response?.data?.error?.code;
+      const msg = err.response?.data?.error?.message;
+      // FE đoán "không hoàn" nhưng BE thấy có hoàn (chính sách vừa đổi / lệch đồng hồ):
+      // giữ modal, bật ô STK lên và bắt buộc — khách nhập rồi bấm lại là xong.
+      if (code === 'BANK_INFO_REQUIRED') {
+        setBankRequiredByServer(true);
+        setBankErrors(validateBankInfo(bankForm));
+        toast.error(msg || 'Vui lòng nhập tài khoản nhận hoàn tiền');
+      } else {
+        toast.error(msg || 'Hủy thất bại');
+      }
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  if (paymentResult) {
+    const qs = paymentResult.orderCode ? `?orderCode=${paymentResult.orderCode}` : '';
+    return <Navigate to={`/reservations/payment/${paymentResult.type}${qs}`} replace />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Đơn của tôi"
+        description="Theo dõi trạng thái đặt chỗ, thanh toán phí và lấy mã QR check-in"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => load('manual')}
+              loading={refreshing}
+              disabled={loading}
+            >
+              <RefreshCw className="h-4 w-4" />
+              Làm mới
+            </Button>
+            <Link to="/availability">
+              <Button variant="secondary" size="sm">
+                <MapPin className="h-4 w-4" />
+                Xem chỗ trống
+              </Button>
+            </Link>
+            <Link to="/reservations/new">
+              <Button size="sm">
+                <CalendarPlus className="h-4 w-4" />
+                Đặt chỗ mới
+              </Button>
+            </Link>
+          </div>
+        }
+      />
+
+      <ErrorAlert message={error} />
+
+      {!loading && items.length > 0 && (
+        <FilterBar
+          active={filterActive}
+          onReset={() => setFilters(emptyFilters)}
+          shown={visibleItems.length}
+          total={items.length}
+          unitLabel="đơn"
+          gridClassName="sm:grid-cols-2 lg:grid-cols-4"
+        >
+          <SearchField
+            label="Biển số"
+            value={filters.plate}
+            onChange={(v) => setFilter('plate', v)}
+            placeholder="VD: 51F-678.90"
+          />
+          <SelectField
+            label="Trạng thái"
+            value={filters.status}
+            onChange={(v) => setFilter('status', v)}
+            allLabel="— Tất cả trạng thái —"
+            options={STATUS_OPTIONS}
+          />
+          <SelectField
+            label="Tầng"
+            value={filters.floorId}
+            onChange={(v) => setFilter('floorId', v)}
+            allLabel="— Tất cả tầng —"
+            options={floorOptions}
+          />
+          <SelectField
+            label="Lọc ngày theo"
+            value={filters.dateField}
+            onChange={(v) => setFilter('dateField', v)}
+            options={DATE_FIELD_OPTIONS}
+          />
+          <DateRangeField
+            label="Khoảng ngày"
+            from={filters.from}
+            to={filters.to}
+            onFromChange={(v) => setFilter('from', v)}
+            onToChange={(v) => setFilter('to', v)}
+            className="sm:col-span-2"
+          />
+        </FilterBar>
+      )}
+
+      {loading ? (
+        <Card>
+          <TableSkeleton rows={3} cols={4} />
+        </Card>
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={CalendarPlus}
+          title="Chưa có đặt chỗ"
+          description="Nhấn Đặt chỗ mới để giữ chỗ trước khi đến bãi"
+          action={
+            <Link to="/reservations/new">
+              <Button>Đặt chỗ mới</Button>
+            </Link>
+          }
+        />
+      ) : visibleItems.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="Không có đơn nào khớp bộ lọc"
+          description="Thử nới khoảng ngày hoặc bỏ bớt điều kiện lọc"
+          action={<Button variant="secondary" onClick={() => setFilters(emptyFilters)}>Xóa lọc</Button>}
+        />
+      ) : (
+        <div className="space-y-3">
+          {visibleItems.map((r) => {
+            const hasQr = r.qr_token && !String(r.qr_token).startsWith('revoked-');
+            const showQr = hasQr && QR_LIVE_STATUSES.includes(r.status);
+            const showQrHistory = hasQr && QR_HISTORY_STATUSES.includes(r.status);
+            const showCancelInfo = r.status === 'cancelled';
+            const cancelledPaid = showCancelInfo ? paidPaymentOf(r) : null;
+            return (
+              <Card key={r.reservation_id}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-lg font-semibold text-slate-800">{r.plate_number}</span>
+                      <Badge status={r.status} />
+                    </div>
+                    <p className="text-sm text-slate-600">{formatLocation(r)}</p>
+                    <p className="text-sm text-slate-500">
+                      {r.vehicleType?.type_name ? `${r.vehicleType.type_name} · ` : ''}
+                      {fmtDateTime(r.start_time)} → {fmtDateTime(r.end_time)}
+                    </p>
+                    {formatShiftLabel(r.reservation_type) && (
+                      <p className="text-xs text-slate-400">{formatShiftLabel(r.reservation_type)}</p>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
+                    {r.status === 'pending' && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleRepay(r)}
+                        loading={repayingId === r.reservation_id}
+                        disabled={!!repayingId}
+                      >
+                        <CreditCard className="h-4 w-4" />
+                        Trả tiếp
+                      </Button>
+                    )}
+                    {isCancellable(r.status) && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600"
+                        onClick={() => openCancel(r)}
+                      >
+                        Hủy đặt chỗ
+                      </Button>
+                    )}
+                    {r.status === 'completed' && (
+                      <span className="flex items-center gap-1 text-xs font-medium text-green-600">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Đã hoàn tất
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {showQr && (
+                  <div className="mt-4 flex flex-col items-center gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-between">
+                    <div className="text-sm text-slate-500">
+                      {r.status === 'checked_in' ? (
+                        <>
+                          <p>
+                            Xe đang trong bãi — quét lại mã này ở <strong>cổng tầng</strong> và{' '}
+                            <strong>cổng ra</strong> khi rời bãi · Chỗ{' '}
+                            <strong>{r.slot?.slot_code || '—'}</strong>
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Giữ sẵn mã trên điện thoại tới khi ra khỏi bãi
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            Đưa mã QR cho nhân viên tại cổng vào · Chỗ{' '}
+                            <strong>{r.slot?.slot_code || '—'}</strong>
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Đến muộn quá hạn giữ chỗ có thể bị hủy (no-show)
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2">
+                      <QRCodeSVG value={r.qr_token} size={120} aria-label="Mã QR check-in" />
+                      <span
+                        className="max-w-30 cursor-default select-all break-all font-mono text-[10px] text-slate-400"
+                        title={r.qr_token}
+                      >
+                        {r.qr_token}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {showQrHistory && (
+                  <div className="mt-4 flex flex-col items-center gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-between">
+                    <div className="text-sm text-slate-500">
+                      <p>Mã QR chỉ để tra cứu — không còn mở được cổng.</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Lưu lại để đối chiếu khi cần
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2">
+                      <div className="relative">
+                        <div className="opacity-40 grayscale">
+                          <QRCodeSVG value={r.qr_token} size={120} aria-label="Mã QR (chỉ để tra cứu)" />
+                        </div>
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <span className="rounded-md bg-slate-800/80 px-2 py-0.5 text-xs font-semibold text-white">
+                            {QR_HISTORY_LABEL[r.status]}
+                          </span>
+                        </span>
+                      </div>
+                      <span
+                        className="max-w-30 cursor-default select-all break-all font-mono text-[10px] text-slate-400"
+                        title={r.qr_token}
+                      >
+                        {r.qr_token}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {showCancelInfo && (
+                  <div className="mt-4 border-t border-slate-100 pt-4 text-sm">
+                    <h4 className="mb-2 font-semibold text-slate-700">Hủy vé đã mua</h4>
+                    <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+                      <div className="flex flex-wrap justify-between gap-x-6 gap-y-1 text-slate-600">
+                        <span>Thời điểm hủy: <strong className="text-slate-700">{fmtDateTime(r.updated_at)}</strong></span>
+                        {cancelledPaid && (
+                          <span>Đã thanh toán: <strong className="text-slate-700">{fmtMoney(cancelledPaid.amount)}</strong></span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 border-t border-slate-200/60 pt-2">
+                        {cancelledPaid ? (
+                          r.refundRequest ? (
+                            r.refundRequest.status === 'refunded' ? (
+                              <div className="flex items-center gap-1.5 text-emerald-700">
+                                <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                                <span>
+                                  <strong>Vé đã được hoàn tiền</strong> ({fmtMoney(r.refundRequest.amount)} về tài khoản{' '}
+                                  nhận hoàn {fmtDateTime(r.refundRequest.refunded_at)})
+                                </span>
+                              </div>
+                            ) : r.refundRequest.status === 'expired' ? (
+                              <div className="flex items-center gap-1.5 text-slate-500">
+                                <span className="h-2 w-2 rounded-full bg-slate-400"></span>
+                                <span><strong>Vé đã hủy</strong> (Yêu cầu hoàn tiền đã hết hạn do thiếu thông tin ngân hàng)</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-amber-700">
+                                <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                <span>
+                                  <strong>Vé chưa được hoàn tiền</strong> (Đang chờ xử lý hoàn {fmtMoney(r.refundRequest.amount)})
+                                </span>
+                              </div>
+                            )
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-amber-700">
+                              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+                              <span><strong>Vé chưa được hoàn tiền</strong> (Đang chờ xử lý hoàn tiền từ ban quản lý)</span>
+                            </div>
+                          )
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-slate-500">
+                            <span className="h-2 w-2 rounded-full bg-slate-400"></span>
+                            <span><strong>Vé đã hủy</strong> (Không phát sinh hoàn tiền)</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal
+        open={!!cancelTarget}
+        title="Hủy đặt chỗ"
+        onClose={() => !cancelLoading && setCancelTarget(null)}
+        footer={
+          <ModalActions
+            onCancel={() => setCancelTarget(null)}
+            onConfirm={handleCancel}
+            confirmLabel="Hủy đặt chỗ"
+            cancelLabel="Giữ lại"
+            loading={cancelLoading}
+          />
+        }
+      >
+        {/* Mốc giờ + % hoàn lấy từ BE (xem effect gọi /reservations/refund-policy ở trên) — ĐỪNG
+            hardcode lại ở đây, Manager chỉnh cấu hình là chữ sai ngay mà không ai biết.
+            Số tiền hoàn CHÍNH XÁC vẫn do BE trả trong response hủy (xem handleCancel). */}
+        {cancelTarget?.status === 'pending' ? (
+          <p className="text-sm text-slate-600">
+            Bỏ giữ chỗ này? Bạn chưa thanh toán nên không bị tính phí — chỗ sẽ được trả lại bãi.
+          </p>
+        ) : (
+          <div className="space-y-3 text-sm text-slate-600">
+            <p>Hủy đặt chỗ đã thanh toán? Mã QR sẽ ngừng hiệu lực. Chính sách hoàn phí giữ chỗ:</p>
+            <ul className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
+              {/* Bãi tắt hoàn (% = 0): nói thẳng một câu, mốc giờ không còn ý nghĩa. */}
+              {refundPercent === 0 ? (
+                <li>· Đơn đã thanh toán: <strong>không hoàn</strong> phí giữ chỗ trong mọi trường hợp</li>
+              ) : (
+                <>
+                  {cutoffText && (
+                    <>
+                      <li>· Hủy trước giờ vào <strong>từ {cutoffText} trở lên</strong>: <strong>hoàn {refundPercent ?? 100}%</strong> phí giữ chỗ</li>
+                      <li>· Trong vòng <strong>{cutoffText}</strong> trước giờ vào: <strong>không hoàn</strong></li>
+                    </>
+                  )}
+                  {/* Bãi đặt mốc = 0 tức là không có cửa sổ "sát giờ": hủy lúc nào cũng hoàn. */}
+                  {cutoffHours === 0 && (
+                    <li>· Hủy trước giờ vào: <strong>hoàn {refundPercent ?? 100}%</strong> phí giữ chỗ</li>
+                  )}
+                  {/* Chưa đọc được chính sách: KHÔNG bịa số % (Manager chỉnh được, 100% không còn chắc). */}
+                  {cutoffHours == null && (
+                    <>
+                      <li>· Hủy <strong>sớm</strong> trước giờ vào: được hoàn phí giữ chỗ theo chính sách hiện hành của bãi</li>
+                      <li>· Hủy <strong>sát giờ vào</strong>: <strong>không hoàn</strong></li>
+                    </>
+                  )}
+                </>
+              )}
+            </ul>
+            <p className="text-xs text-slate-400">
+              Chỗ sẽ được trả lại bãi. Số tiền hoàn chính xác hiển thị sau khi xác nhận hủy.
+            </p>
+
+            {/* PayOS không hoàn tự động được — bãi chuyển khoản TAY, nên phải có STK ngay lúc hủy. */}
+            {showBankFields && (
+              <RefundBankFields
+                form={bankForm}
+                errors={bankErrors}
+                disabled={cancelLoading}
+                onChange={(patch) => {
+                  setBankForm((f) => ({ ...f, ...patch }));
+                  setBankErrors((e) => {
+                    const next = { ...e };
+                    Object.keys(patch).forEach((k) => delete next[k]);
+                    return next;
+                  });
+                }}
+              />
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}

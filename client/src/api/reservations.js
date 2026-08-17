@@ -1,0 +1,37 @@
+import api from './axios';
+
+// Reservation — phía khách hàng (User). KHÔNG gồm các hàm staff check-in.
+// Tất cả endpoint yêu cầu đăng nhập role 'User' (token tự gắn qua api/axios.js).
+export const reservationsApi = {
+  // Đặt chỗ + tạo link thanh toán PayOS.
+  // body: { plateNumber, vehicleTypeId, floorId, shiftId, arrivalDate, zoneId? }
+  create: (data) => api.post('/reservations', data),
+
+  // Danh sách đặt chỗ của tôi.
+  listMine: () => api.get('/reservations/mine'),
+
+  // Chi tiết 1 đơn.
+  get: (id) => api.get(`/reservations/${id}`),
+
+  // Hủy đơn (pending/confirmed) + hoàn phí theo chính sách.
+  // Đơn ĐÃ trả phí + hủy trước cutoff (có hoàn tiền) thì BẮT BUỘC kèm tài khoản nhận hoàn:
+  // bankInfo = { bankName, bankAccountNumber, bankAccountHolder }. Thiếu → BE trả 400
+  // BANK_INFO_REQUIRED. Hồ sơ đã lưu đủ 3 trường thì BE dùng lại, khỏi gửi.
+  cancel: (id, bankInfo) => api.post(`/reservations/${id}/cancel`, bankInfo || {}),
+
+  // "Trả tiếp" đơn pending: BE cấp link PayOS MỚI (hoặc tái dùng link cũ còn sống).
+  // Trả { reservation, payment, checkoutUrl, reused, alreadyPaid? }.
+  // alreadyPaid=true hoặc checkoutUrl=null ⇒ đơn đã thanh toán, BE tự xác nhận, không điều hướng.
+  repay: (id) => api.post(`/reservations/${id}/repay`),
+
+  // Preview: đếm chỗ trống trong khung giờ (trước khi đặt). Tham số là query.
+  // params: { floorId, vehicleTypeId, shiftId, arrivalDate, zoneId? }
+  windowAvailability: (params) => api.get('/reservations/window-availability', { params }),
+
+  // Preview: gợi ý chỗ tốt nhất (tùy chọn, có thể bỏ qua ở bản đầu).
+  suggestSlot: (params) => api.get('/reservations/suggest-slot', { params }),
+
+  // Chính sách hoàn phí giữ chỗ (đọc settings booking_refund_*) — đổ số thật vào modal hủy.
+  // data: { cutoffHours, refundPercent }
+  refundPolicy: () => api.get('/reservations/refund-policy'),
+};

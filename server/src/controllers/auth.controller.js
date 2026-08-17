@@ -170,3 +170,77 @@ export const googleTestPage = asyncHandler(async (req, res) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   res.status(200).type('html').send(googleTestHtml(isGoogleConfigured() ? process.env.GOOGLE_CLIENT_ID : null));
 });
+
+// ---------- MOBILE GOOGLE SIGN-IN ----------
+// Serves an HTML page with Google Identity Services button for mobile apps.
+// After the user signs in with Google, the page calls POST /api/auth/google internally,
+// gets the JWT, and redirects to the mobile app's custom URL scheme (pmbs-mobile://auth).
+const googleMobileHtml = (clientId) => `<!doctype html>
+<html lang="vi"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PBMS - Đăng nhập Google</title>
+<script src="https://accounts.google.com/gsi/client" async defer><\/script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:24px}
+  .card{background:#fff;border-radius:20px;padding:40px 32px;max-width:380px;
+    width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.15)}
+  .logo{width:56px;height:56px;border-radius:16px;background:#4f46e5;
+    display:flex;align-items:center;justify-content:center;margin:0 auto 20px;
+    font-size:24px;color:#fff;font-weight:bold}
+  h2{color:#0f172a;font-size:22px;margin-bottom:8px}
+  p{color:#64748b;font-size:14px;line-height:1.5;margin-bottom:28px}
+  #g-btn{display:flex;justify-content:center;min-height:44px}
+  #status{margin-top:20px;font-size:13px;color:#64748b;min-height:20px}
+  .spinner{display:inline-block;width:20px;height:20px;border:3px solid #e2e8f0;
+    border-top-color:#4f46e5;border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .error{color:#dc2626}
+</style></head>
+<body>
+  <div class="card">
+    <div class="logo">P</div>
+    <h2>Đăng nhập với Google</h2>
+    <p>Chọn tài khoản Google để đăng nhập hoặc tạo tài khoản PBMS tự động.</p>
+    <div id="g-btn"></div>
+    <div id="status"></div>
+  </div>
+  <script>
+    var STATUS=document.getElementById('status');
+    window.onCredential=async function(resp){
+      STATUS.innerHTML='<span class="spinner"></span> Đang xử lý...';
+      try{
+        var r=await fetch(location.origin+'/api/auth/google',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({idToken:resp.credential})});
+        var json=await r.json();
+        if(!r.ok){STATUS.innerHTML='<span class="error">'+(json?.error?.message||'Đăng nhập thất bại')+'</span>';return}
+        var token=json.data?.token||'';
+        var user=btoa(unescape(encodeURIComponent(JSON.stringify(json.data?.user||{}))));
+        var isNew=json.data?.isNew?'1':'0';
+        window.location.href='pmbs-mobile://auth?token='+encodeURIComponent(token)
+          +'&user='+encodeURIComponent(user)+'&isNew='+isNew;
+      }catch(e){STATUS.innerHTML='<span class="error">Lỗi kết nối: '+e.message+'</span>'}
+    };
+    function initGsi(){
+      if(!window.google?.accounts?.id){setTimeout(initGsi,200);return}
+      google.accounts.id.initialize({client_id:'${clientId}',callback:onCredential,auto_select:false});
+      google.accounts.id.renderButton(document.getElementById('g-btn'),
+        {type:'standard',size:'large',text:'signin_with',width:300});
+    }
+    initGsi();
+  <\/script>
+</body></html>`;
+
+export const googleMobilePage = asyncHandler(async (req, res) => {
+  const clientId = isGoogleConfigured() ? process.env.GOOGLE_CLIENT_ID : null;
+  if (!clientId) {
+    throw new AppError('Google Sign-In chưa được cấu hình', 503, 'GOOGLE_NOT_CONFIGURED');
+  }
+  res.removeHeader('Content-Security-Policy');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+  res.status(200).type('html').send(googleMobileHtml(clientId));
+});
