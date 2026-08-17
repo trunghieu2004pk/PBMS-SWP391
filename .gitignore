@@ -1,0 +1,15 @@
+node_modules
+client/node_modules
+server/node_modules
+dist
+build
+.env
+*.log
+server/.env
+client/.env
+client/.cert
+
+# Local data / demo uploads
+server/data/
+server/uploads/
+*.sqlite
