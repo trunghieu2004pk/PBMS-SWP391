@@ -1,0 +1,44 @@
+{
+  "name": "pbms-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "swagger": "node src/config/swagger-gen.js",
+    "predev": "node src/config/swagger-gen.js",
+    "prestart": "node src/config/swagger-gen.js",
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "create-admin": "node scripts/createAdmin.js",
+    "seed": "node scripts/seedDemo.js",
+    "seed:checkout": "node scripts/seedCheckout.js",
+    "test:photo": "node scripts/testPhotoPipeline.js",
+    "test:jobs": "node scripts/testMaintenanceJobs.js",
+    "test:plate": "node scripts/testPlateVN.js",
+    "test:e2e": "node scripts/testE2EFlow.js",
+    "seed:qr": "node scripts/seedTestQr.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@payos/node": "^2.0.5",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.5.2",
+    "express-validator": "^7.2.1",
+    "google-auth-library": "^10.7.0",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.2.0",
+    "mysql2": "^3.14.1",
+    "nodemailer": "^8.0.11",
+    "recharts": "^3.10.1",
+    "sequelize": "^6.37.7",
+    "sharp": "^0.35.3",
+    "swagger-autogen": "^2.23.7",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

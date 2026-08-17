@@ -9,7 +9,10 @@ server/.env
 client/.env
 client/.cert
 
-# Local data / demo uploads
+# Rác cục bộ / demo artifacts (không commit)
 server/data/
+# Ảnh hiện trạng xe/người lái — dữ liệu cá nhân, KHÔNG BAO GIỜ commit lên git
 server/uploads/
 *.sqlite
+topic8_extracted.txt
+BE-HANDOFF-GATE-KIOSK.md
