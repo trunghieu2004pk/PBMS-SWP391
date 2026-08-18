@@ -15,8 +15,8 @@ export const usersApi = {
 };
 
 // SỬA LẠI TỪ axiosClient THÀNH api CHO ĐÚNG VỚI INSTANCE CỦA DỰ ÁN
-export const getDashboardData = async () => {
-  const response = await api.get("/dashboard");
+export const getDashboardData = async (filters = {}) => {
+  const response = await api.get("/dashboard", { params: filters });
   return response.data;
 };
 // --- THÊM 2 HÀM AI MỚI VÀO ĐÂY ---

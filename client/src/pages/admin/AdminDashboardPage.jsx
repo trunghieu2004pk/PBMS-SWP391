@@ -33,10 +33,34 @@ const AdminDashboardPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
+  // Khởi tạo ngày mặc định (14 ngày qua)
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 14);
+    return d.toISOString().split("T")[0];
+  });
+
+  const [endDate, setEndDate] = useState(() => {
+    return new Date().toISOString().split("T")[0];
+  });
+
+  // Tính toán khoảng ngày hiện tại để set UI Active cho nút (UX Improvement)
+  const getActiveRange = () => {
+    if (!startDate || !endDate) return null;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const diffDays = Math.round(
+      Math.abs((end - start) / (1000 * 60 * 60 * 24)),
+    );
+    return diffDays;
+  };
+  const activeRange = getActiveRange();
+
+  // Gọi API lấy dữ liệu
+  const fetchData = async (start = startDate, end = endDate) => {
     setLoading(true);
     try {
-      const res = await getDashboardData();
+      const res = await getDashboardData({ startDate: start, endDate: end });
       if (res.success) {
         setData(res.data);
       }
@@ -47,11 +71,25 @@ const AdminDashboardPage = () => {
     }
   };
 
+  // Xử lý chọn ngày nhanh
+  const setQuickRange = (days) => {
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const endStr = to.toISOString().split("T")[0];
+    const startStr = from.toISOString().split("T")[0];
+
+    setEndDate(endStr);
+    setStartDate(startStr);
+    fetchData(startStr, endStr);
+  };
+
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50/50">
         <div className="flex flex-col items-center gap-3">
@@ -64,7 +102,7 @@ const AdminDashboardPage = () => {
     );
   }
 
-  if (!data) {
+  if (!data && !loading) {
     return (
       <div className="p-6 text-red-500 bg-slate-50/50 min-h-screen flex items-center justify-center">
         <div className="text-center space-y-2">
@@ -73,7 +111,7 @@ const AdminDashboardPage = () => {
             Không thể tải dữ liệu Dashboard.
           </p>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="px-4 py-2 bg-brand text-white rounded-lg shadow-md hover:bg-brand/90 transition"
           >
             Thử lại
@@ -83,24 +121,21 @@ const AdminDashboardPage = () => {
     );
   }
 
-  const dailyData = data.charts.revenueByDay.map((item) => ({
-    date: item.date
-      ? new Date(item.date).toLocaleDateString("vi-VN", {
-          day: "numeric",
-          month: "short",
-        })
-      : "",
-    revenue: Number(item.amount || 0),
-  }));
+  const dailyData =
+    data?.charts?.revenueByDay?.map((item) => ({
+      date: item.date
+        ? new Date(item.date).toLocaleDateString("vi-VN", {
+            day: "numeric",
+            month: "short",
+          })
+        : "",
+      revenue: Number(item.amount || 0),
+    })) || [];
 
-  const totalTypeRevenue = data.charts.revenueByType.reduce(
-    (acc, c) => acc + c.value,
-    0,
-  );
-  const totalMethodRevenue = data.charts.revenueByMethod.reduce(
-    (acc, c) => acc + c.value,
-    0,
-  );
+  const totalTypeRevenue =
+    data?.charts?.revenueByType?.reduce((acc, c) => acc + c.value, 0) || 0;
+  const totalMethodRevenue =
+    data?.charts?.revenueByMethod?.reduce((acc, c) => acc + c.value, 0) || 0;
 
   return (
     <div className="p-6 space-y-6 bg-slate-50/50 min-h-screen">
@@ -116,12 +151,80 @@ const AdminDashboardPage = () => {
           </p>
         </div>
         <button
-          onClick={fetchData}
+          onClick={() => fetchData()}
           className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 transition"
         >
           <RefreshCcw size={16} className={loading ? "animate-spin" : ""} />
           Làm mới dữ liệu
         </button>
+      </div>
+
+      {/* VÙNG LỌC THỜI GIAN UX/UI MỚI */}
+      <div className="flex flex-wrap items-end gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-slate-500">
+            Từ ngày
+          </label>
+          <input
+            type="date"
+            value={startDate}
+            max={endDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-slate-500">
+            Đến ngày
+          </label>
+          <input
+            type="date"
+            value={endDate}
+            min={startDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 outline-none focus:border-brand focus:ring-1 focus:ring-brand"
+          />
+        </div>
+
+        <button
+          onClick={() => fetchData(startDate, endDate)}
+          className="rounded-lg bg-blue-500 px-5 py-2 text-sm font-medium text-white shadow hover:bg-blue-600 transition-colors"
+        >
+          Áp dụng
+        </button>
+
+        <div className="ml-auto flex items-center gap-2 bg-slate-50 p-1 rounded-full border border-slate-200">
+          <button
+            onClick={() => setQuickRange(7)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeRange === 7
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            7 ngày
+          </button>
+          <button
+            onClick={() => setQuickRange(30)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeRange === 30
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            30 ngày
+          </button>
+          <button
+            onClick={() => setQuickRange(90)}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              activeRange === 90
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            90 ngày
+          </button>
+        </div>
       </div>
 
       {/* Quick Stats (4 cards) */}
@@ -141,7 +244,7 @@ const AdminDashboardPage = () => {
               {fmtMoney(data.quickStats.totalRevenue)}
             </h3>
             <p className="mt-1 flex items-center gap-1 text-xs text-emerald-600 font-medium">
-              <TrendingUp size={14} /> Chỉ tính giao dịch trực tuyến PayOS
+              <TrendingUp size={14} /> Tất cả phương thức
             </p>
           </div>
         </div>
@@ -207,15 +310,15 @@ const AdminDashboardPage = () => {
         </div>
       </div>
 
-      {/* Row 1: AreaChart Doanh thu theo ngày */}
+      {/* Row 1: AreaChart Doanh thu theo thời gian */}
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
         <div className="mb-6 flex flex-col gap-1">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Calendar size={18} className="text-blue-500" /> Doanh thu theo ngày
-            (14 ngày gần nhất)
+            <Calendar size={18} className="text-blue-500" /> Biểu đồ doanh thu
           </h2>
           <p className="text-xs text-slate-400">
-            Xem tiến trình phát triển và biến động doanh số hàng ngày
+            Xem tiến trình phát triển và biến động doanh số trong khoảng thời
+            gian đã chọn
           </p>
         </div>
         <div className="h-[320px]">

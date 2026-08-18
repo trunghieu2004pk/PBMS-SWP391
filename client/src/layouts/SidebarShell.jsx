@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Outlet, Link, NavLink, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { useLogout } from '../hooks/useLogout';
-import { getRoleName, roleLabels } from '../lib/auth';
+import { useState } from "react";
+import { Outlet, Link, NavLink, useLocation } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { useLogout } from "../hooks/useLogout";
+import { getRoleName, roleLabels } from "../lib/auth";
 
 // Khung sườn chung cho các khu vực cần đăng nhập (Admin/Manager/Staff/User):
 // - Header ngang full width dính trên cùng: logo + badge vai trò bên trái, cụm tài khoản
@@ -15,8 +15,8 @@ import { getRoleName, roleLabels } from '../lib/auth';
 const navLinkClass = ({ isActive }) =>
   `block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
     isActive
-      ? 'bg-brand-light font-semibold text-brand'
-      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+      ? "bg-brand-light font-semibold text-brand"
+      : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
   }`;
 
 // Danh sách menu — dùng chung cho sidebar desktop lẫn drawer mobile.
@@ -25,7 +25,9 @@ const navLinkClass = ({ isActive }) =>
 function NavList({ tabs, onNavigate }) {
   const location = useLocation();
   const currentQuery =
-    new URLSearchParams(location.search).get('tab') || tabs.find((t) => t.isDefault)?.query || null;
+    new URLSearchParams(location.search).get("tab") ||
+    tabs.find((t) => t.isDefault)?.query ||
+    null;
 
   return (
     <nav className="space-y-1 px-3 py-4">
@@ -61,15 +63,29 @@ export default function SidebarShell({ tabs, accountLinks = [] }) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setMobileOpen((open) => !open)}
-            aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
+            aria-label={mobileOpen ? "Đóng menu" : "Mở menu"}
             aria-expanded={mobileOpen}
             className="-ml-1 rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               {mobileOpen ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 6l12 12M18 6L6 18"
+                />
               ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
               )}
             </svg>
           </button>
@@ -89,14 +105,18 @@ export default function SidebarShell({ tabs, accountLinks = [] }) {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="hidden text-sm text-slate-500 sm:inline">{user?.fullName || user?.username}</span>
+          <span className="hidden text-sm text-slate-500 sm:inline">
+            {user?.fullName || user?.username}
+          </span>
           {accountLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
                 `rounded-lg px-3 py-2 text-sm font-medium ${
-                  isActive ? 'text-brand' : 'text-slate-500 hover:text-slate-800'
+                  isActive
+                    ? "text-brand"
+                    : "text-slate-500 hover:text-slate-800"
                 }`
               }
             >
@@ -120,7 +140,10 @@ export default function SidebarShell({ tabs, accountLinks = [] }) {
         {/* Drawer mobile — nằm dưới header, bấm backdrop hoặc bấm link đều đóng */}
         {mobileOpen && (
           <div className="fixed inset-x-0 bottom-0 top-16 z-40 lg:hidden">
-            <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMobileOpen(false)} />
+            <div
+              className="absolute inset-0 bg-slate-900/40"
+              onClick={() => setMobileOpen(false)}
+            />
             <div className="absolute inset-y-0 left-0 w-64 overflow-y-auto bg-surface-raised shadow-(--shadow-modal)">
               <NavList tabs={tabs} onNavigate={() => setMobileOpen(false)} />
             </div>
