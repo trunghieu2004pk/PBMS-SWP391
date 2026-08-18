@@ -233,9 +233,11 @@ export default function StaffOperationsPage() {
   // Mục đang mở nằm trên URL (?tab=) chứ không phải state trong component: sidebar bên trái là
   // nơi chuyển mục, và F5 / mở lại link vẫn về đúng chỗ đang xem.
   // 'checkin' | 'active' | 'reservation' | 'booth' | 'incident' | 'passes'
-  const [searchParams] = useSearchParams();
+ const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'checkin';
-
+  const setTab = (newTab) => {
+    setSearchParams({ tab: newTab });
+  };
   // Danh mục cho dropdown: floors dùng ở [1] và [7], vehicleTypes dùng ở [1].
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);

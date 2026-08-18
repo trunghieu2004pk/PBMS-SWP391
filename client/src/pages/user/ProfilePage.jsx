@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Save, Landmark, UserRound } from 'lucide-react';
-import { updateMe } from '../../api/auth';
+import { Save, Landmark, UserRound, Lock } from 'lucide-react';
+import { updateMe, changePassword } from '../../api/auth';
 import { useAuth } from '../../context/AuthContext';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
@@ -54,6 +54,11 @@ export default function ProfilePage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Form Đổi mật khẩu
+  const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwdError, setPwdError] = useState('');
+  const [pwdSubmitting, setPwdSubmitting] = useState(false);
+
   const patchForm = (patch) => setForm((f) => ({ ...f, ...patch }));
 
   const handleSubmit = async (e) => {
@@ -86,11 +91,44 @@ export default function ProfilePage() {
     }
   };
 
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwdError('');
+    if (!pwdForm.currentPassword) {
+      setPwdError('Vui lòng nhập mật khẩu hiện tại');
+      return;
+    }
+    if (!pwdForm.newPassword || pwdForm.newPassword.length < 6) {
+      setPwdError('Mật khẩu mới phải có ít nhất 6 ký tự');
+      return;
+    }
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+      setPwdError('Mật khẩu xác nhận không khớp');
+      return;
+    }
+
+    setPwdSubmitting(true);
+    try {
+      const { data } = await changePassword({
+        currentPassword: pwdForm.currentPassword,
+        newPassword: pwdForm.newPassword,
+      });
+      toast.success(data.message || 'Đã đổi mật khẩu thành công');
+      setPwdForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || 'Đổi mật khẩu thất bại';
+      setPwdError(msg);
+      toast.error(msg);
+    } finally {
+      setPwdSubmitting(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <PageHeader
         title="Hồ sơ của tôi"
-        description="Cập nhật thông tin cá nhân và tài khoản ngân hàng nhận hoàn tiền"
+        description="Cập nhật thông tin cá nhân, mật khẩu và tài khoản ngân hàng nhận hoàn tiền"
       />
 
       <Card>
@@ -174,6 +212,56 @@ export default function ProfilePage() {
           </Button>
         </form>
       </Card>
+
+      {/* FORM ĐỔI MẬT KHẨU */}
+      <Card>
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Lock className="h-4 w-4 text-brand" />
+            Đổi mật khẩu
+          </h2>
+
+          <Field label="Mật khẩu hiện tại">
+            <input
+              type="password"
+              className={inputClass}
+              value={pwdForm.currentPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+              placeholder="Nhập mật khẩu hiện tại"
+            />
+          </Field>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Mật khẩu mới">
+              <input
+                type="password"
+                className={inputClass}
+                value={pwdForm.newPassword}
+                onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+                placeholder="Ít nhất 6 ký tự"
+              />
+            </Field>
+
+            <Field label="Xác nhận mật khẩu mới">
+              <input
+                type="password"
+                className={inputClass}
+                value={pwdForm.confirmPassword}
+                onChange={(e) => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+                placeholder="Nhập lại mật khẩu mới"
+              />
+            </Field>
+          </div>
+
+          <ErrorAlert message={pwdError} />
+
+          <Button type="submit" variant="outline" className="w-full" loading={pwdSubmitting}>
+            <Lock className="h-4 w-4" />
+            Cập nhật mật khẩu
+          </Button>
+        </form>
+      </Card>
     </div>
   );
 }
+
