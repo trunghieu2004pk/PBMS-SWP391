@@ -77,11 +77,8 @@ export default function CustomerFeedbackPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
-  // Ảnh đính kèm
-  const [photoBlob, setPhotoBlob] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
-  const [photoName, setPhotoName] = useState('');
-  const [photoWarning, setPhotoWarning] = useState('');
+  // Ảnh đính kèm (hỗ trợ tối đa 5 ảnh)
+  const [photos, setPhotos] = useState([]); // [{ id, blob, preview, name, warning }]
   const [photoError, setPhotoError] = useState('');
 
   // Lịch sử phản hồi
@@ -124,58 +121,75 @@ export default function CustomerFeedbackPage() {
   }, [activeTab, loadHistory]);
 
   const handleFileSelect = async (e) => {
-    const file = e.target.files?.[0];
+    const selectedFiles = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
+    if (selectedFiles.length === 0) return;
 
     setPhotoError('');
-    setPhotoWarning('');
 
-    if (!file.type.startsWith('image/')) {
-      setPhotoError('Tệp đã chọn không phải ảnh. Vui lòng chọn tệp JPG, PNG hoặc WebP.');
+    if (photos.length + selectedFiles.length > 5) {
+      setPhotoError('Chỉ được upload tối đa 5 ảnh.');
       return;
     }
 
-    if (file.size > MAX_BYTES) {
-      setPhotoError('Kích thước ảnh vượt quá giới hạn 3MB. Vui lòng chọn ảnh nhỏ hơn.');
-      return;
+    const processedPhotos = [];
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    for (const file of selectedFiles) {
+      if (!file.type.startsWith('image/')) {
+        setPhotoError('Một trong các tệp đã chọn không phải ảnh. Vui lòng chọn tệp JPG, PNG hoặc WebP.');
+        continue;
+      }
+
+      if (file.size > MAX_BYTES) {
+        setPhotoError(`Ảnh "${file.name}" vượt quá giới hạn 3MB. Vui lòng chọn ảnh nhỏ hơn.`);
+        continue;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = objectUrl;
+        await img.decode();
+
+        drawToCanvas(canvas, img, img.naturalWidth, img.naturalHeight);
+        const lum = averageLuminance(canvas);
+        let warning = '';
+        if (lum < 32) warning = 'Ảnh hơi tối — nên chụp nơi đủ sáng để đối chiếu hư hại rõ hơn.';
+        else if (lum > 242) warning = 'Ảnh bị lóa/cháy sáng — nên chọn ảnh rõ chi tiết hơn.';
+
+        const blob = await new Promise((resolve) =>
+          canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
+        );
+
+        if (!blob) throw new Error('Không tạo được ảnh từ canvas');
+
+        processedPhotos.push({
+          id: Math.random().toString(36).substring(2, 9),
+          blob,
+          name: file.name,
+          preview: canvas.toDataURL('image/jpeg', JPEG_QUALITY),
+          warning,
+        });
+      } catch (err) {
+        setPhotoError(`Không thể xử lý tệp ảnh "${file.name}". Vui lòng thử tệp khác.`);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
     }
 
-    const objectUrl = URL.createObjectURL(file);
-    try {
-      const img = new Image();
-      img.src = objectUrl;
-      await img.decode();
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      drawToCanvas(canvas, img, img.naturalWidth, img.naturalHeight);
-      const lum = averageLuminance(canvas);
-      if (lum < 32) setPhotoWarning('Ảnh hơi tối — nên chụp nơi đủ sáng để đối chiếu hư hại rõ hơn.');
-      else if (lum > 242) setPhotoWarning('Ảnh bị lóa/cháy sáng — nên chọn ảnh rõ chi tiết hơn.');
-
-      const blob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY),
-      );
-
-      if (!blob) throw new Error('Không tạo được ảnh từ canvas');
-
-      setPhotoBlob(blob);
-      setPhotoName(file.name);
-      setPhotoPreview(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
-    } catch {
-      setPhotoError('Không thể xử lý tệp ảnh này. Vui lòng thử tệp khác.');
-    } finally {
-      URL.revokeObjectURL(objectUrl);
+    if (processedPhotos.length > 0) {
+      setPhotos((prev) => [...prev, ...processedPhotos]);
     }
   };
 
-  const clearPhoto = () => {
-    setPhotoBlob(null);
-    setPhotoPreview(null);
-    setPhotoName('');
-    setPhotoWarning('');
+  const removePhoto = (id) => {
+    setPhotos((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const clearPhotos = () => {
+    setPhotos([]);
     setPhotoError('');
   };
 
@@ -196,8 +210,10 @@ export default function CustomerFeedbackPage() {
       if (sessionId) {
         formData.append('sessionId', sessionId);
       }
-      if (photoBlob) {
-        formData.append('photo', photoBlob, photoName || 'feedback.jpg');
+      if (photos && photos.length > 0) {
+        photos.forEach((p) => {
+          formData.append('photos', p.blob, p.name || 'feedback.jpg');
+        });
       }
 
       await incidentsApi.submitFeedback(formData);
@@ -205,7 +221,7 @@ export default function CustomerFeedbackPage() {
 
       // Reset form
       setDescription('');
-      clearPhoto();
+      clearPhotos();
       setActiveTab('history');
     } catch (err) {
       const msg = err.response?.data?.error?.message || 'Không thể gửi phản hồi. Vui lòng thử lại sau.';
@@ -218,8 +234,11 @@ export default function CustomerFeedbackPage() {
 
   const openPhotoModal = async (inc) => {
     try {
-      const blobUrl = await fetchIncidentPhotoBlobUrl(inc.incident_id);
-      setPreviewPhotoModal({ url: blobUrl, incident: inc });
+      const paths = inc.image_path ? inc.image_path.split(',') : [];
+      const urls = await Promise.all(
+        paths.map((_, index) => fetchIncidentPhotoBlobUrl(inc.incident_id, index))
+      );
+      setPreviewPhotoModal({ urls, incident: inc, currentIndex: 0 });
     } catch {
       toast.error('Không thể tải ảnh đính kèm của phản hồi này');
     }
@@ -355,7 +374,7 @@ export default function CustomerFeedbackPage() {
                 {/* 2. SECTION UPLOAD ẢNH ĐÍNH KÈM: Trực tiếp bên dưới text content */}
                 <div>
                   <label className="block text-sm font-semibold text-slate-800 mb-1.5">
-                    Ảnh đính kèm minh chứng (Tối đa 1 ảnh, ≤ 3MB)
+                    Ảnh đính kèm minh chứng (Tối đa 5 ảnh, mỗi ảnh ≤ 3MB)
                   </label>
 
                   {photoError && (
@@ -365,58 +384,48 @@ export default function CustomerFeedbackPage() {
                     </div>
                   )}
 
-                  {photoWarning && (
-                    <div className="mb-3 rounded-lg bg-amber-50 p-2.5 text-xs text-amber-700 flex items-center gap-1.5">
-                      <AlertTriangle className="h-4 w-4 shrink-0" />
-                      {photoWarning}
+                  {/* Hiển thị danh sách các ảnh đã chọn */}
+                  {photos.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                      {photos.map((p, idx) => (
+                        <div key={p.id} className="relative rounded-2xl border border-slate-200 bg-slate-900/5 p-3">
+                          <div className="flex items-center gap-3">
+                            <div className="relative aspect-4/3 w-20 shrink-0 overflow-hidden rounded-xl bg-slate-900 shadow-sm flex items-center justify-center">
+                              <img
+                                src={p.preview}
+                                alt={`Preview ${idx + 1}`}
+                                className="h-full w-full object-contain"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <p className="text-xs font-semibold text-slate-800 truncate" title={p.name}>
+                                {p.name}
+                              </p>
+                              {p.warning ? (
+                                <p className="text-[10px] text-amber-600 leading-tight">
+                                  ⚠ {p.warning}
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-emerald-600 leading-tight">
+                                  ✓ Ảnh đạt chuẩn HD.
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removePhoto(p.id)}
+                                className="text-[11px] font-semibold text-rose-600 hover:text-rose-800 transition-colors flex items-center gap-0.5 pt-0.5"
+                              >
+                                <X className="h-3 w-3" />
+                                <span>Xóa ảnh</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
 
-                  {photoPreview ? (
-                    <div className="relative rounded-2xl border border-slate-200 bg-slate-900/5 p-3">
-                      <div className="flex flex-col sm:flex-row items-center gap-4">
-                        <div className="relative aspect-4/3 w-full sm:w-48 overflow-hidden rounded-xl bg-slate-900 shadow-sm flex items-center justify-center">
-                          <img
-                            src={photoPreview}
-                            alt="Ảnh đính kèm"
-                            className="h-full w-full object-contain"
-                          />
-                        </div>
-                        <div className="flex-1 space-y-1.5 text-center sm:text-left">
-                          <div className="flex items-center justify-center sm:justify-start gap-1.5 text-sm font-medium text-slate-800">
-                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            <span>Đã chọn ảnh thành công</span>
-                          </div>
-                          <p className="text-xs text-slate-500 truncate max-w-xs">
-                            {photoName || 'feedback-photo.jpg'}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            Ảnh đã được tối ưu hóa chuẩn HD theo quy chuẩn hệ thống.
-                          </p>
-                          <div className="pt-2 flex flex-wrap gap-2 justify-center sm:justify-start">
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => fileInputRef.current?.click()}
-                            >
-                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                              Đổi ảnh khác
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="danger"
-                              size="sm"
-                              onClick={clearPhoto}
-                            >
-                              <X className="h-3.5 w-3.5 mr-1" />
-                              Xóa ảnh
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
+                  {photos.length < 5 && (
                     <div
                       onClick={() => fileInputRef.current?.click()}
                       className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-center transition hover:border-brand hover:bg-brand-light/10"
@@ -425,7 +434,7 @@ export default function CustomerFeedbackPage() {
                         <Upload className="h-6 w-6 text-slate-400 group-hover:text-brand" />
                       </div>
                       <p className="mt-3 text-sm font-semibold text-slate-700 group-hover:text-brand">
-                        Nhấn để chọn ảnh hoặc kéo thả vào đây
+                        Nhấn để chọn ảnh hoặc kéo thả vào đây ({photos.length}/5)
                       </p>
                       <p className="mt-1 text-xs text-slate-400">
                         Hỗ trợ định dạng JPG, PNG, WebP (Dung lượng tối đa 3MB)
@@ -437,6 +446,7 @@ export default function CustomerFeedbackPage() {
                     ref={fileInputRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
+                    multiple
                     className="hidden"
                     onChange={handleFileSelect}
                   />
@@ -604,17 +614,53 @@ export default function CustomerFeedbackPage() {
         open={Boolean(previewPhotoModal)}
         size="lg"
         title={`Ảnh minh chứng — Phiếu #${previewPhotoModal?.incident?.incident_id || ''}`}
-        onClose={() => setPreviewPhotoModal(null)}
+        onClose={() => {
+          if (previewPhotoModal?.urls) {
+            previewPhotoModal.urls.forEach(url => URL.revokeObjectURL(url));
+          }
+          setPreviewPhotoModal(null);
+        }}
       >
-        {previewPhotoModal?.url && (
+        {previewPhotoModal?.urls && previewPhotoModal.urls.length > 0 && (
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-xl bg-black flex items-center justify-center max-h-[70vh]">
-              <img
-                src={previewPhotoModal.url}
-                alt="Ảnh phản hồi"
-                className="max-h-[68vh] w-auto object-contain"
-              />
+            <div className="relative w-full flex items-center justify-center min-h-[300px]">
+              {previewPhotoModal.urls.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute left-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
+                  onClick={() => setPreviewPhotoModal(prev => ({
+                    ...prev,
+                    currentIndex: (prev.currentIndex - 1 + prev.urls.length) % prev.urls.length
+                  }))}
+                >
+                  &larr;
+                </button>
+              )}
+              <div className="overflow-hidden rounded-xl bg-black flex items-center justify-center max-h-[70vh] w-full">
+                <img
+                  src={previewPhotoModal.urls[previewPhotoModal.currentIndex]}
+                  alt="Ảnh phản hồi"
+                  className="max-h-[68vh] w-auto object-contain"
+                />
+              </div>
+              {previewPhotoModal.urls.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute right-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
+                  onClick={() => setPreviewPhotoModal(prev => ({
+                    ...prev,
+                    currentIndex: (prev.currentIndex + 1) % prev.urls.length
+                  }))}
+                >
+                  &rarr;
+                </button>
+              )}
             </div>
+            {previewPhotoModal.urls.length > 1 && (
+              <p className="text-sm text-slate-500 font-semibold text-center">
+                Ảnh {previewPhotoModal.currentIndex + 1} / {previewPhotoModal.urls.length}
+              </p>
+            )}
             <p className="text-xs text-slate-500 text-center">
               Mô tả: &ldquo;{previewPhotoModal.incident?.description}&rdquo;
             </p>

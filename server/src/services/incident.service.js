@@ -76,17 +76,22 @@ export const createIncident = async (reporterId, data, file) => {
   }
 
   let imagePath = null;
-  if (file) {
-    const fileExt = path.extname(file.originalname) || '.jpg';
-    const relativePath = path.posix.join(
-      'incidents',
-      `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`
-    );
-    const absolutePath = path.join(UPLOAD_ROOT, relativePath);
+  const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
+  if (fileArray.length > 0) {
+    const paths = [];
+    for (const f of fileArray) {
+      const fileExt = path.extname(f.originalname) || '.jpg';
+      const relativePath = path.posix.join(
+        'incidents',
+        `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`
+      );
+      const absolutePath = path.join(UPLOAD_ROOT, relativePath);
 
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, file.buffer);
-    imagePath = relativePath;
+      await mkdir(path.dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, f.buffer);
+      paths.push(relativePath);
+    }
+    imagePath = paths.join(',');
   }
 
   const incident = await Incident.create({
@@ -272,24 +277,26 @@ export const recordWrongFloorIncident = async ({
 
 export const createCustomerIncident = async (
   userId,
-  { description, type, sessionId, file },
+  { description, type, sessionId, files },
 ) => {
   if (type && !INCIDENT_TYPES.includes(type)) {
     throw new AppError("Loại sự cố không hợp lệ", 400, "INCIDENT_INVALID");
   }
 
-  let imagePath = null;
-  if (file) {
-    const fileExt = path.extname(file.originalname) || ".jpg";
-    const relativePath = path.posix.join(
-      "incidents",
-      `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`,
-    );
-    const absolutePath = path.join(UPLOAD_ROOT, relativePath);
+  let imagePaths = [];
+  if (files && files.length > 0) {
+    for (const file of files) {
+      const fileExt = path.extname(file.originalname) || ".jpg";
+      const relativePath = path.posix.join(
+        "incidents",
+        `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`
+      );
+      const absolutePath = path.join(UPLOAD_ROOT, relativePath);
 
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, file.buffer);
-    imagePath = relativePath;
+      await mkdir(path.dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, file.buffer);
+      imagePaths.push(relativePath);
+    }
   } else {
     throw new AppError(
       "Vui lòng upload ảnh liên quan đến sự cố",
@@ -304,7 +311,7 @@ export const createCustomerIncident = async (
     reported_by: null,
     type: type || "other",
     description: description.trim(),
-    image_path: imagePath,
+    image_path: imagePaths.join(','),
     status: "open",
   });
 

@@ -18,8 +18,8 @@ export const incidentsApi = {
 /**
  * Tải file ảnh đính kèm của sự cố / phản hồi về dạng blob URL.
  */
-export const fetchIncidentPhotoBlobUrl = async (incidentId) => {
-  const res = await api.get(incidentsApi.photoUrl(incidentId), {
+export const fetchIncidentPhotoBlobUrl = async (incidentId, index = 0) => {
+  const res = await api.get(`${incidentsApi.photoUrl(incidentId)}?index=${index}`, {
     responseType: 'blob',
   });
   return URL.createObjectURL(res.data);

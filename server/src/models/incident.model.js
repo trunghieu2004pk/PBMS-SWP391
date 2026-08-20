@@ -82,7 +82,7 @@ const Incident = sequelize.define(
       comment: "Kết luận xử lý — bắt buộc khi chuyển sang resolved",
     },
     image_path: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.STRING(1000),
       allowNull: true,
       comment: "Ảnh liên quan đến sự cố",
     },

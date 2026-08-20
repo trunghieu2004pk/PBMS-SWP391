@@ -3004,6 +3004,13 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "index",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
