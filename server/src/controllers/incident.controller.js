@@ -21,7 +21,7 @@ export const list = asyncHandler(async (req, res) => {
 });
 
 export const create = asyncHandler(async (req, res) => {
-  const incident = await incidentService.createIncident(req.user.user_id, req.body, req.file);
+  const incident = await incidentService.createIncident(req.user.user_id, req.body, req.files);
   successResponse(res, incident, 'Incident recorded', 201);
 });
 
@@ -47,7 +47,7 @@ export const createCustomerIncident = asyncHandler(async (req, res) => {
       description: description.trim(),
       type: type || "other",
       sessionId: sessionId ? Number(sessionId) : null,
-      file: req.file,
+      files: req.files,
     },
   );
 
@@ -59,13 +59,23 @@ export const streamIncidentPhoto = asyncHandler(async (req, res) => {
   if (!incident) {
     throw new AppError("Không tìm thấy báo cáo sự cố", 404, "NOT_FOUND");
   }
+
+  const roleName = req.user.role?.role_name;
+  if (roleName === ROLES.USER && incident.user_id !== req.user.user_id) {
+    throw new AppError("Bạn không có quyền xem ảnh của báo cáo này", 403, "FORBIDDEN");
+  }
+
   if (!incident.image_path) {
     throw new AppError("Báo cáo sự cố không có ảnh", 404, "NOT_FOUND");
   }
 
+  const paths = incident.image_path.split(',');
+  const index = parseInt(req.query.index || '0', 10);
+  const selectedPath = paths[index] || paths[0];
+
   res.setHeader("Content-Type", "image/jpeg");
   res.setHeader("Cache-Control", "private, no-store");
-  createReadStream(absolutePathOf(incident.image_path)).pipe(res);
+  createReadStream(absolutePathOf(selectedPath)).pipe(res);
 });
 
 // POST /incidents/feedback — khách hàng gửi phản hồi / khiếu nại kèm ảnh tùy chọn.
@@ -77,13 +87,13 @@ export const submitFeedback = asyncHandler(async (req, res) => {
   }
 
   let incident;
-  if (req.file) {
+  if (req.files && req.files.length > 0) {
     // Có ảnh → dùng createCustomerIncident (hỗ trợ lưu file)
     incident = await incidentService.createCustomerIncident(req.user.user_id, {
       description: description.trim(),
       type: category || "other",
       sessionId: sessionId ? Number(sessionId) : null,
-      file: req.file,
+      files: req.files,
     });
   } else {
     // Không có ảnh → dùng createUserFeedback

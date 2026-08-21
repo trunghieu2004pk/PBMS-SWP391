@@ -82,8 +82,11 @@ export default function IncidentsPage() {
   const openIncidentPhoto = async (inc) => {
     setIncidentPhotoLoading(true);
     try {
-      const url = await fetchIncidentPhotoBlobUrl(inc.incident_id);
-      setPreviewIncidentPhoto({ incident: inc, url });
+      const paths = inc.image_path ? inc.image_path.split(',') : [];
+      const urls = await Promise.all(
+        paths.map((_, index) => fetchIncidentPhotoBlobUrl(inc.incident_id, index))
+      );
+      setPreviewIncidentPhoto({ incident: inc, urls, currentIndex: 0 });
     } catch (err) {
       toast.error(err.response?.data?.error?.message || 'Không tải được ảnh sự cố');
     } finally {
@@ -390,8 +393,8 @@ export default function IncidentsPage() {
         size="md"
         title={previewIncidentPhoto ? `Ảnh sự cố (phiếu #${previewIncidentPhoto.incident.incident_id})` : 'Ảnh sự cố'}
         onClose={() => {
-          if (previewIncidentPhoto?.url) {
-            URL.revokeObjectURL(previewIncidentPhoto.url);
+          if (previewIncidentPhoto?.urls) {
+            previewIncidentPhoto.urls.forEach(url => URL.revokeObjectURL(url));
           }
           setPreviewIncidentPhoto(null);
         }}
@@ -400,11 +403,42 @@ export default function IncidentsPage() {
           <p className="py-8 text-center text-sm text-slate-400">Đang tải ảnh…</p>
         ) : previewIncidentPhoto ? (
           <div className="flex flex-col items-center gap-3">
-            <img
-              src={previewIncidentPhoto.url}
-              alt="Ảnh sự cố"
-              className="max-h-[500px] w-full rounded-lg object-contain border border-slate-100"
-            />
+            <div className="relative w-full flex items-center justify-center min-h-[300px]">
+              {previewIncidentPhoto.urls.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute left-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
+                  onClick={() => setPreviewIncidentPhoto(prev => ({
+                    ...prev,
+                    currentIndex: (prev.currentIndex - 1 + prev.urls.length) % prev.urls.length
+                  }))}
+                >
+                  &larr;
+                </button>
+              )}
+              <img
+                src={previewIncidentPhoto.urls[previewIncidentPhoto.currentIndex]}
+                alt="Ảnh sự cố"
+                className="max-h-[500px] w-full rounded-lg object-contain border border-slate-100"
+              />
+              {previewIncidentPhoto.urls.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute right-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
+                  onClick={() => setPreviewIncidentPhoto(prev => ({
+                    ...prev,
+                    currentIndex: (prev.currentIndex + 1) % prev.urls.length
+                  }))}
+                >
+                  &rarr;
+                </button>
+              )}
+            </div>
+            {previewIncidentPhoto.urls.length > 1 && (
+              <p className="text-sm text-slate-500 font-semibold">
+                Ảnh {previewIncidentPhoto.currentIndex + 1} / {previewIncidentPhoto.urls.length}
+              </p>
+            )}
             <p className="w-full rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
               Mô tả: <span className="font-medium">{previewIncidentPhoto.incident.description}</span>
             </p>

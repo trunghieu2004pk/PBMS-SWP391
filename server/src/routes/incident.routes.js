@@ -7,8 +7,9 @@ import {
   adminOnly,
   userOnly,
   staffOrManagerOrAdmin,
+  authenticated,
 } from "../middleware/access.js";
-import { singlePhoto } from "../middleware/photoUpload.js";
+import { singlePhoto, multiplePhotos } from "../middleware/photoUpload.js";
 import {
   incidentListValidator,
   incidentCreateValidator,
@@ -37,7 +38,7 @@ router.post(
      #swagger.summary = 'Tạo sự cố (Staff)'
      #swagger.requestBody = { required: true, content: { 'application/json': { example: { type: 'wrong_info', description: 'Khách báo sai biển số', sessionId: 1 } } } } */
   ...staffOnly,
-  singlePhoto("photo"),
+  multiplePhotos("photos", 5),
   incidentCreateValidator,
   validate,
   incidentController.create,
@@ -59,7 +60,7 @@ router.post(
   /* #swagger.tags = ['Incidents']
      #swagger.summary = 'Khách hàng gửi báo cáo sự cố kèm ảnh' */
   ...userOnly,
-  singlePhoto("photo"),
+  multiplePhotos("photos", 5),
   incidentController.createCustomerIncident,
 );
 
@@ -67,7 +68,7 @@ router.get(
   "/:id/photo",
   /* #swagger.tags = ['Incidents']
      #swagger.summary = 'Stream ảnh sự cố của khách hàng' */
-  ...staffOrManagerOrAdmin,
+  ...authenticated,
   incidentController.streamIncidentPhoto,
 );
 
@@ -78,7 +79,7 @@ router.post(
   /* #swagger.tags = ['Incidents']
      #swagger.summary = 'Khách hàng gửi phản hồi / khiếu nại (có ảnh đính kèm tùy chọn)' */
   ...userOnly,
-  singlePhoto("photo"),
+  multiplePhotos("photos", 5),
   incidentController.submitFeedback,
 );
 

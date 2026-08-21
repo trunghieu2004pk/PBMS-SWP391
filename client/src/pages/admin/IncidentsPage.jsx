@@ -123,8 +123,11 @@ export default function IncidentsPage() {
 
   const openCustomerPhoto = async (inc) => {
     try {
-      const blobUrl = await fetchIncidentPhotoBlobUrl(inc.incident_id);
-      setCustomerPhotoModal({ url: blobUrl, incident: inc });
+      const paths = inc.image_path ? inc.image_path.split(',') : [];
+      const urls = await Promise.all(
+        paths.map((_, index) => fetchIncidentPhotoBlobUrl(inc.incident_id, index))
+      );
+      setCustomerPhotoModal({ urls, incident: inc, currentIndex: 0 });
     } catch {
       toast.error("Không tải được ảnh đính kèm của phiếu này");
     }
@@ -721,17 +724,53 @@ export default function IncidentsPage() {
             ? `Ảnh minh chứng khách hàng — Phiếu #${customerPhotoModal?.incident?.incident_id || ""}`
             : `Ảnh minh họa sự cố — Phiếu #${customerPhotoModal?.incident?.incident_id || ""}`
         }
-        onClose={() => setCustomerPhotoModal(null)}
+        onClose={() => {
+          if (customerPhotoModal?.urls) {
+            customerPhotoModal.urls.forEach(url => URL.revokeObjectURL(url));
+          }
+          setCustomerPhotoModal(null);
+        }}
       >
-        {customerPhotoModal?.url && (
+        {customerPhotoModal?.urls && customerPhotoModal.urls.length > 0 && (
           <div className="space-y-4">
-            <div className="overflow-hidden rounded-2xl bg-slate-950 flex items-center justify-center max-h-[70vh] border border-slate-800 shadow-lg">
-              <img
-                src={customerPhotoModal.url}
-                alt="Ảnh đính kèm"
-                className="max-h-[68vh] w-auto object-contain transition-all duration-300 hover:scale-105"
-              />
+            <div className="relative w-full flex items-center justify-center min-h-[300px]">
+              {customerPhotoModal.urls.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute left-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
+                  onClick={() => setCustomerPhotoModal(prev => ({
+                    ...prev,
+                    currentIndex: (prev.currentIndex - 1 + prev.urls.length) % prev.urls.length
+                  }))}
+                >
+                  &larr;
+                </button>
+              )}
+              <div className="overflow-hidden rounded-2xl bg-slate-950 flex items-center justify-center max-h-[70vh] w-full border border-slate-800 shadow-lg">
+                <img
+                  src={customerPhotoModal.urls[customerPhotoModal.currentIndex]}
+                  alt="Ảnh đính kèm"
+                  className="max-h-[68vh] w-auto object-contain transition-all duration-300 hover:scale-105"
+                />
+              </div>
+              {customerPhotoModal.urls.length > 1 && (
+                <button
+                  type="button"
+                  className="absolute right-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
+                  onClick={() => setCustomerPhotoModal(prev => ({
+                    ...prev,
+                    currentIndex: (prev.currentIndex + 1) % prev.urls.length
+                  }))}
+                >
+                  &rarr;
+                </button>
+              )}
             </div>
+            {customerPhotoModal.urls.length > 1 && (
+              <p className="text-sm text-slate-500 font-semibold text-center">
+                Ảnh {customerPhotoModal.currentIndex + 1} / {customerPhotoModal.urls.length}
+              </p>
+            )}
             <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-755 border border-slate-200 space-y-1.5 shadow-2xs">
               <p>
                 <strong>Người gửi:</strong>{" "}

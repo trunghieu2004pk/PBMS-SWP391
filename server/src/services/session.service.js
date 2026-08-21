@@ -159,6 +159,37 @@ export const resolveCheckinQr = async (qrToken) => {
       }[reservation.status] || `Đơn đặt chỗ không dùng được (trạng thái: ${reservation.status}).`;
       throw new AppError(why, 409, 'CONFLICT');
     }
+    // CHẶN THEO GIỜ — cửa này trước đây chỉ kiểm status, nên quét QR đơn của NGÀY MAI vẫn lọt:
+    // form được điền sẵn như một lượt đặt chỗ, nhưng checkin() không khớp được đơn (chưa tới giờ)
+    // rồi lặng lẽ tạo phiên walk_in → khách đã trả phí giữ chỗ vẫn bị thu giá vãng lai.
+    // Giữ đúng luật của checkinReservation() và cổng kiosk: QR của đơn chỉ dùng được TRONG ca.
+    const nowAt = new Date();
+    const startAt = new Date(reservation.start_time);
+    const endAt = new Date(reservation.end_time);
+    if (nowAt < startAt) {
+      // Chỉ mách "gõ tay để cho vào vãng lai" khi đường đó THẬT SỰ đi được. Đơn nằm trong tầm
+      // chặn thì checkin() cũng từ chối — mách ra là đẩy nhân viên đi thử một đường cụt rồi
+      // quay lại, đúng kiểu lỗi câu-thông-báo-nói-dối mà bản cũ ("sớm tối đa 15 phút") đã mắc.
+      const walkinOpen = startAt.getTime() - nowAt.getTime() > walkinBlockHorizonMs();
+      throw new AppError(
+        `Chưa tới giờ ca đã đặt — ca bắt đầu lúc ${startAt.toLocaleString('vi-VN')}. `
+        + (walkinOpen
+          ? 'Khách muốn gửi ngay bây giờ thì gõ tay biển số để cho vào diện vãng lai; '
+            + 'đơn đã đặt vẫn còn nguyên để dùng đúng giờ.'
+          : 'Xe này đã có chỗ giữ cho ca sắp tới nên không nhận thêm diện vãng lai — '
+            + 'mời khách quay lại đúng giờ vào.'),
+        409,
+        'RESERVATION_NOT_OPEN',
+      );
+    }
+    if (nowAt > endAt) {
+      throw new AppError(
+        `Đơn đã hết giờ ca (kết thúc lúc ${endAt.toLocaleString('vi-VN')}) — không dùng để vào bãi được nữa. `
+        + 'Cho vào diện khách vãng lai nếu bãi còn chỗ.',
+        409,
+        'RESERVATION_EXPIRED',
+      );
+    }
     return {
       kind: 'reservation',
       label: 'Đặt chỗ qua app',
@@ -179,6 +210,17 @@ export const resolveCheckinQr = async (qrToken) => {
     const today = new Date().toISOString().slice(0, 10);
     if (today < String(pass.start_date) || today > String(pass.end_date)) {
       throw new AppError('Vé tháng ngoài thời hạn sử dụng', 409, 'CONFLICT');
+    }
+    // Ngày còn hạn CHƯA ĐỦ — vé còn có KHUNG GIỜ trong ngày. Thiếu chốt này thì vé 07:00–19:00
+    // quét lúc 22:00 vẫn lọt, rồi checkin() thấy ngoài khung nên không gắn pass_id vào phiên;
+    // lúc ra previewCheckoutFee không nhìn thấy vé nữa và thu vãng lai TRỌN lượt.
+    if (!isWithinPassWindow(pass, new Date())) {
+      throw new AppError(
+        `Vé tháng chỉ dùng được trong khung ${pass.valid_from_time}–${pass.valid_to_time}. `
+        + 'Ngoài khung thì gõ tay biển số để cho vào diện vãng lai.',
+        409,
+        'PASS_OUTSIDE_WINDOW',
+      );
     }
     return {
       kind: 'pass',
@@ -414,11 +456,26 @@ export const hasActiveSessionForPlate = async (plateNumber) => {
 };
 
 // Ân hạn VÀO SỚM đã BỎ (=0): đơn chỉ nhận check-in từ ĐÚNG start_time (khớp lúc job khóa-đầu-ca).
-// Khách đến sớm hơn vẫn bị WALKIN_BLOCK_BEFORE_RESERVATION_MS chặn walk-in (hướng sang tab "Đặt chỗ vào").
+// Cho vào sớm là biếu không khoảng đó — ca chỉ tính tiền từ start_time.
 // (SRS BR-31 để 15' — đây là LỆCH SRS có chủ đích, cần cập nhật tài liệu.)
 const CHECKIN_EARLY_GRACE_MS = 0;
-// Đơn confirmed bắt đầu trong vòng ngưỡng này → coi khách là "đến sớm cho đơn", chặn walk-in.
-const WALKIN_BLOCK_BEFORE_RESERVATION_MS = 60 * 60 * 1000;
+
+/**
+ * Xe có đơn bắt đầu trong vòng ngưỡng này thì KHÔNG nhận diện walk-in nữa (xem chỗ gọi).
+ *
+ * Lấy theo GIỚI HẠN GỬI TỐI ĐA của bãi, không đặt số cứng: đó đúng là khoảng thời gian mà một
+ * lượt walk-in CÓ THỂ còn đang chạy khi tới giờ ca — tức là đúng vùng có nguy cơ chồng lấn.
+ * Manager chỉnh `max_parking_hours` thì ngưỡng này tự đi theo.
+ *
+ * Bãi KHÔNG đặt giới hạn (null) thì về lý walk-in có thể đỗ vô hạn, chặn theo lý sẽ thành
+ * "chặn mọi đơn tương lai" — đúng cái lỗi đã phải vá. Nên dùng mức dự phòng 24h: quá một ngày
+ * mà xe chưa ra thì đã là chuyện phải xử lý riêng rồi.
+ */
+const WALKIN_BLOCK_FALLBACK_HOURS = 24;
+const walkinBlockHorizonMs = () => {
+  const maxHours = getMaxParkingHours();
+  return (maxHours ?? WALKIN_BLOCK_FALLBACK_HOURS) * 60 * 60 * 1000;
+};
 
 const findConfirmedReservationForPlate = async (plateNumber, at = new Date()) =>
   Reservation.findOne({
@@ -455,24 +512,29 @@ export const checkin = async (staffUserId, data) => {
     return getSession(result.session.session_id);
   }
 
-  // Chỉ chặn khi đơn confirmed SẮP tới giờ (trong vòng 60'): khách này là khách đến sớm
-  // cho đơn của họ → hướng sang tab "Đặt chỗ vào" (mở sớm tối đa 15'). Đơn còn XA hơn thì
-  // cho gửi walk-in bình thường — trước đây chặn MỌI đơn tương lai, khách có đơn tuần sau
-  // hôm nay không gửi xe được.
+  // Xe có đơn SẮP TỚI thì không nhận diện walk-in, vì hai lượt sẽ CHỒNG LẤN:
+  // lượt walk-in còn đang chạy tới giờ ca thì checkinReservation() chặn 409 'duplicate_session'
+  // (reservation.service.js ~1458 — chỉ void được phiên walk-in mới ≤15'). Khách buộc phải lấy
+  // xe ra, trả phí vãng lai, rồi mới vào lại bằng đơn đã trả tiền. Chặn từ đây gọn hơn nhiều.
+  //
+  // TẦM CHẶN = giới hạn gửi tối đa của bãi: đó đúng là khoảng mà một lượt walk-in CÓ THỂ còn
+  // đang chạy khi tới giờ ca. Đơn xa hơn thế thì không thể đụng nhau → vẫn cho gửi bình thường
+  // (đừng lặp lại lỗi cũ: chặn MỌI đơn tương lai thì khách có đơn tuần sau hôm nay không gửi được).
+  const blockHorizonMs = walkinBlockHorizonMs();
   const nearConfirmed = await Reservation.findOne({
     where: {
       plate_number: plateNumber,
       status: 'confirmed',
       start_time: {
         [Op.gt]: now,
-        [Op.lte]: new Date(now.getTime() + WALKIN_BLOCK_BEFORE_RESERVATION_MS),
+        [Op.lte]: new Date(now.getTime() + blockHorizonMs),
       },
     },
     order: [['start_time', 'ASC']],
   });
   if (nearConfirmed) {
     throw new AppError(
-      `Biển ${plateNumber} có đặt chỗ lúc ${new Date(nearConfirmed.start_time).toLocaleString('vi-VN')} — dùng tab "Đặt chỗ vào" (sớm tối đa 15 phút)`,
+      `Biển ${plateNumber} có đặt chỗ lúc ${new Date(nearConfirmed.start_time).toLocaleString('vi-VN')} — chưa tới giờ vào.`,
       409,
       'RESERVATION_NOT_OPEN',
     );
@@ -505,11 +567,21 @@ export const checkin = async (staffUserId, data) => {
         'PASS_VEHICLE_MISMATCH',
       );
     }
-    // Trong khung giờ pass → miễn phí; ngoài khung giờ → bỏ qua, xử lý như walk-in (tính phí).
-    if (isWithinPassWindow(passForPlate, now)) {
-      activePass = passForPlate;
-    }
+    // LUÔN gắn vé vào phiên, kể cả khi VÀO ngoài khung giờ.
+    //
+    // Trước đây ngoài khung thì bỏ vé, tạo phiên walk_in với pass_id = null. Hệ quả: lúc ra
+    // previewCheckoutFee KHÔNG còn nhìn thấy vé nữa và thu vãng lai TRỌN lượt — kể cả những giờ
+    // NẰM TRONG khung mà khách đã trả tiền cả tháng. Vé 07:00–19:00, vào 22:00 ra 09:00:
+    // thu 11h thay vì 9h.
+    //
+    // Nó còn tạo ra bất đối xứng vô lý cho cùng một tình huống "đỗ vắt qua ranh giới khung":
+    //   vào TRONG khung, ra ngoài  → chỉ trả phần ngoài
+    //   vào NGOÀI khung, ra trong  → trả hết
+    // Gắn vé rồi để billableMinutesUnderPass() cắt phần phải trả thì cả hai chiều xử như nhau.
+    activePass = passForPlate;
   }
+  // Vào ĐÚNG khung mới là lượt gửi miễn phí; ngoài khung là có tiền phải trả ngay từ phút đầu.
+  const passCoversEntry = activePass ? isWithinPassWindow(activePass, now) : false;
 
   // Cổng IN: nếu staff không gửi gateId, tự suy cổng vào duy nhất của tầng.
   const gate = await resolveFloorGate({
@@ -574,7 +646,10 @@ export const checkin = async (staffUserId, data) => {
         check_in_by: staffUserId,
         session_type: sessionType,
         status: 'active',
-        calculated_fee: activePass ? 0 : null,
+        // 0 = tạm coi miễn phí (vào đúng khung vé). null = CHƯA BIẾT, chờ tính lúc ra.
+        // Vé tháng vào NGOÀI khung phải là null: đặt 0 thì màn hình báo "0đ" cho một lượt
+        // chắc chắn có tiền phải trả.
+        calculated_fee: passCoversEntry ? 0 : null,
       },
       { transaction }
     );
@@ -828,10 +903,14 @@ export const previewCheckoutFee = async (data) => {
   // ân hạn check-in sớm 15 phút bên reservation.service).
   const resvOverstay = await detectReservationOverstay(session, feeEnd);
 
-  // VÉ THÁNG lố khung: ngưỡng là khung giờ ghi trên vé. Có phút nào nằm ngoài khung là lố.
-  // Vẫn thu phụ thu dù tiền giờ đã tính riêng — nếu không, đỗ lố chỉ bằng giá vãng lai thì
-  // chẳng ai buồn lấy xe đúng giờ.
-  const passOverstay = passBillableMinutes != null && passBillableMinutes > 0;
+  // VÉ THÁNG lố khung: ngưỡng là khung giờ ghi trên vé. Vẫn thu phụ thu dù tiền giờ đã tính
+  // riêng — nếu không, đỗ lố chỉ bằng giá vãng lai thì chẳng ai buồn lấy xe đúng giờ.
+  //
+  // CHỈ áp khi khách VÀO trong khung rồi ở lì quá — đó mới là "lố". Người VÀO ngoài khung ngay
+  // từ đầu thì không hề có nghĩa vụ "lấy xe đúng giờ" cho lượt này: họ biết trước là phải trả
+  // tiền giờ và đã chấp nhận. Phạt thêm là phạt oan, mà răn đe cũng chẳng để làm gì.
+  const passEnteredInWindow = pass ? isWithinPassWindow(pass, session.time_in) : false;
+  const passOverstay = passBillableMinutes != null && passBillableMinutes > 0 && passEnteredInWindow;
 
   const activeOverstayIncident = await Incident.findOne({
     where: {

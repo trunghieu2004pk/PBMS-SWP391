@@ -45,6 +45,46 @@ export const singlePhoto = (fieldName = 'photo') => (req, res, next) => {
       next(new AppError(message, 400, 'VALIDATION_ERROR'));
       return;
     }
+    if (err.message === 'Request aborted') {
+      next(new AppError('Tải ảnh thất bại do kết nối bị ngắt hoặc client hủy yêu cầu', 400, 'REQUEST_ABORTED'));
+      return;
+    }
+    next(err);
+  });
+};
+
+export const multiplePhotos = (fieldName = 'photos', maxCount = 5) => (req, res, next) => {
+  const uploadMultiple = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_BYTES, files: maxCount },
+    fileFilter: (_req, file, cb) => {
+      if (!ALLOWED_MIME.includes(file.mimetype)) {
+        cb(new AppError('Chỉ nhận ảnh JPEG/PNG/WebP', 400, 'VALIDATION_ERROR'));
+        return;
+      }
+      cb(null, true);
+    },
+  });
+
+  uploadMultiple.array(fieldName, maxCount)(req, res, (err) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      const message =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? 'Một trong các ảnh vượt quá 3MB — giảm chất lượng trước khi gửi'
+          : err.code === 'LIMIT_FILE_COUNT'
+            ? `Chỉ gửi được tối đa ${maxCount} ảnh`
+            : `Lỗi tải ảnh: ${err.message}`;
+      next(new AppError(message, 400, 'VALIDATION_ERROR'));
+      return;
+    }
+    if (err.message === 'Request aborted') {
+      next(new AppError('Tải ảnh thất bại do kết nối bị ngắt hoặc client hủy yêu cầu', 400, 'REQUEST_ABORTED'));
+      return;
+    }
     next(err);
   });
 };

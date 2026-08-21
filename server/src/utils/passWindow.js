@@ -44,8 +44,20 @@ const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); retur
  * Duyệt theo từng ngày lịch vì khung giờ vé lặp lại mỗi ngày. Bắt đầu lùi 1 ngày để khung qua
  * nửa đêm (vd 22:00→06:00) mở từ hôm trước vẫn phủ được phần sáng sớm hôm nay.
  */
+/**
+ * Trạng thái vé mà khách ĐÃ TRẢ TIỀN cho khoảng ngày của nó.
+ *
+ * 'expired' PHẢI nằm đây. Đây là câu hỏi LỊCH SỬ — "những ngày đó vé có bao không" — khác hẳn
+ * câu hỏi "bây giờ vé còn dùng được không" của isWithinPassWindow().
+ * Trước đây chỉ nhận 'active' nên có lỗ: xe vào lúc vé còn hạn, đỗ qua ngày hết hạn, job nền
+ * đổi vé sang 'expired', tới lúc ra thì coverage về RỖNG và khách bị thu TRỌN lượt — kể cả
+ * những ngày vé đã bao. Đo thật: gửi 84h vắt qua hạn bị thu 84h thay vì 32h.
+ * 'pending' (chưa trả tiền) và 'cancelled' (đã hoàn tiền) thì không bao gì cả.
+ */
+const PAID_PASS_STATUSES = ['active', 'expired'];
+
 const coveredRangesUnderPass = (pass, timeIn, timeOut) => {
-  if (!pass || pass.status !== 'active') return [];
+  if (!pass || !PAID_PASS_STATUSES.includes(pass.status)) return [];
 
   const from = parseTimeToMinutes(pass.valid_from_time);
   const to = parseTimeToMinutes(pass.valid_to_time);
