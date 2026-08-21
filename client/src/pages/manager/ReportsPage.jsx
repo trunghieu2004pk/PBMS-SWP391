@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LayoutGrid, Car, Clock, TrendingUp, Banknote, Activity, LogIn, LogOut, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Car, Clock, TrendingUp, Activity, LogIn, LogOut, RefreshCw } from 'lucide-react';
 import { reportsApi } from '../../api/reports';
 import Card, { CardHeader } from '../../components/ui/Card';
 import StatCard from '../../components/ui/StatCard';
@@ -9,10 +9,9 @@ import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
 import EmptyState from '../../components/ui/EmptyState';
 
-// Báo cáo (Manager) — gộp occupancy (hiện tại) + doanh thu & lưu lượng (theo khoảng ngày).
+// Báo cáo (Manager) — gộp occupancy (hiện tại) + lưu lượng (theo khoảng ngày).
 // Nguồn: GET /reports/overview (đã bao gồm occupancy). Biểu đồ vẽ bằng CSS bar, không dùng lib.
 
-const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 const fmtNum = (v) => Number(v || 0).toLocaleString('vi-VN');
 const fmtPeriod = (iso) => (iso ? new Date(iso).toLocaleDateString('vi-VN') : '—');
 // 'YYYY-MM-DD' -> 'DD/MM' (cắt trực tiếp, tránh lệch múi giờ khi new Date).
@@ -29,9 +28,6 @@ const toISODate = (date) => {
   return `${y}-${m}-${day}`;
 };
 
-const TYPE_LABEL = { parking: 'Gửi xe', booking: 'Đặt chỗ', monthly_pass: 'Vé tháng', other: 'Khác' };
-const METHOD_LABEL = { payos: 'PayOS (online)', cash: 'Tiền mặt', free: 'Miễn phí' };
-
 // Màu thanh theo mức lấp đầy.
 const rateColor = (rate) => (rate >= 80 ? 'bg-red-500' : rate >= 50 ? 'bg-amber-500' : 'bg-emerald-500');
 
@@ -42,52 +38,6 @@ const presetRange = (days) => {
   from.setDate(from.getDate() - (days - 1));
   return { from: toISODate(from), to: toISODate(to) };
 };
-
-// Danh sách phân rã có thanh tỉ lệ (dùng cho doanh thu theo loại / theo phương thức).
-function BreakdownList({ rows, labelMap }) {
-  if (!rows.length) return <EmptyState title="Không có dữ liệu" className="py-8" />;
-  const max = Math.max(...rows.map((r) => r.total), 1);
-  return (
-    <div className="space-y-3">
-      {rows.map((r) => (
-        <div key={r.key}>
-          <div className="mb-1 flex items-center justify-between gap-2 text-sm">
-            <span className="font-medium text-slate-700">{labelMap[r.key] || r.key}</span>
-            <span className="whitespace-nowrap text-slate-500">
-              {fmtMoney(r.total)} · {fmtNum(r.count)} GD
-            </span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-brand" style={{ width: `${(r.total / max) * 100}%` }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Biểu đồ cột dọc — doanh thu theo ngày (1 chuỗi).
-function DailyRevenueChart({ data }) {
-  if (!data.length) return <EmptyState title="Chưa có doanh thu trong khoảng ngày" className="py-8" />;
-  const max = Math.max(...data.map((d) => d.revenue), 1);
-  return (
-    <div className="overflow-x-auto pb-1">
-      <div className="flex h-52 items-stretch gap-2">
-        {data.map((d) => (
-          <div key={d.date} className="flex min-w-6.5 flex-1 flex-col items-center" title={`${fmtDayMonth(d.date)}: ${fmtMoney(d.revenue)}`}>
-            <div className="flex w-full flex-1 items-end">
-              <div
-                className="w-full rounded-t bg-brand/80"
-                style={{ height: `${d.revenue > 0 ? Math.max((d.revenue / max) * 100, 3) : 0}%` }}
-              />
-            </div>
-            <span className="mt-1 whitespace-nowrap text-[10px] text-slate-400">{fmtDayMonth(d.date)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // Biểu đồ cột dọc kép — lưu lượng vào/ra theo ngày (2 chuỗi).
 function DailyTrafficChart({ data }) {
@@ -158,7 +108,6 @@ export default function ReportsPage() {
 
   const snapshot = report?.occupancy?.snapshot;
   const byFloor = report?.occupancy?.byFloor || [];
-  const revenue = report?.revenue;
   const traffic = report?.traffic;
 
   return (
@@ -167,7 +116,7 @@ export default function ReportsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Báo cáo</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Tình trạng bãi hiện tại, doanh thu và lưu lượng vào/ra theo khoảng ngày.
+            Tình trạng bãi hiện tại và lưu lượng vào/ra theo khoảng ngày.
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={applyFilter} loading={loading}>
@@ -242,36 +191,7 @@ export default function ReportsPage() {
             </Card>
           </section>
 
-          {/* 2. Doanh thu theo khoảng ngày */}
-          <section>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-slate-800">Doanh thu</h2>
-              {/* BE đã lọc doanh thu theo floorId — nhãn phải khớp, không ghi cứng "toàn bãi". */}
-              <span className="text-xs text-slate-400">
-                {fmtPeriod(report.period?.from)} – {fmtPeriod(report.period?.to)}
-                {floorId ? ' · theo tầng đã chọn' : ' · toàn bãi'}
-              </span>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <StatCard label="Tổng doanh thu" value={fmtMoney(revenue.total)} icon={Banknote} className="sm:col-span-3" />
-            </div>
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              <Card>
-                <CardHeader title="Theo loại giao dịch" />
-                <BreakdownList rows={(revenue.byType || []).map((r) => ({ key: r.type, total: r.total, count: r.count }))} labelMap={TYPE_LABEL} />
-              </Card>
-              <Card>
-                <CardHeader title="Theo phương thức" />
-                <BreakdownList rows={(revenue.byMethod || []).map((r) => ({ key: r.method, total: r.total, count: r.count }))} labelMap={METHOD_LABEL} />
-              </Card>
-            </div>
-            <Card className="mt-4">
-              <CardHeader title="Doanh thu theo ngày" />
-              <DailyRevenueChart data={revenue.daily || []} />
-            </Card>
-          </section>
-
-          {/* 3. Lưu lượng theo khoảng ngày */}
+          {/* 2. Lưu lượng theo khoảng ngày */}
           <section>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-slate-800">Lưu lượng vào/ra</h2>
