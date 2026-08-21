@@ -23,7 +23,7 @@ const FOREIGN_SERIES = ['NG', 'QT', 'CV', 'NN'];
 const RESERVED_PROVINCE_CODES = new Set([42, 44, 45, 46, 87, 91, 96]);
 
 /** Giữ khớp với MOTORBIKE_TYPE_CODES bên server (utils/plateVN.js). */
-const MOTORBIKE_TYPE_CODES = ['BIKE'];
+const MOTORBIKE_TYPE_CODES = ['BIKE', 'EVBIKE'];
 
 export const PLATE_VN_HINT =
   'VD: 30A-123.45 (ô tô) · 68PA-045.45 hoặc 36B1-123.45 (xe máy) · 29MĐ1-123.45 (xe máy điện)';
@@ -69,9 +69,9 @@ const PATTERNS = [
     normalize: ([, prov, series, country, seq]) => `${prov}-${country}-${series}-${seq}`,
   },
   {
-    // Xe máy điện MĐ1..MĐ9
+    // Xe máy điện: seri MĐ1..MĐ9 hoặc MĐ (số tuỳ chọn)
     category: 'motorbike',
-    re: new RegExp(`^(\\d{2})${S}(MĐ)([1-9])${S}${NUM}$`),
+    re: new RegExp(`^(\\d{2})${S}(MĐ)([1-9]?)${S}${NUM}$`),
     normalize: ([, prov, s, d, num]) => `${prov}${s}${d}-${formatNumber(num)}`,
   },
   {
