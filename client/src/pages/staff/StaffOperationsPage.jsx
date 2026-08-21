@@ -233,11 +233,13 @@ export default function StaffOperationsPage() {
   // Mục đang mở nằm trên URL (?tab=) chứ không phải state trong component: sidebar bên trái là
   // nơi chuyển mục, và F5 / mở lại link vẫn về đúng chỗ đang xem.
   // 'checkin' | 'active' | 'reservation' | 'booth' | 'incident' | 'passes'
- const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'checkin';
+
   const setTab = (newTab) => {
     setSearchParams({ tab: newTab });
   };
+
   // Danh mục cho dropdown: floors dùng ở [1] và [7], vehicleTypes dùng ở [1].
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
@@ -455,7 +457,10 @@ export default function StaffOperationsPage() {
     setIncError('');
     setTab('incident');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    toast('Đã mở phiếu sự cố — mô tả chênh lệch rồi bấm Gửi', { icon: '📝' });
+    // toast của dự án là OBJECT (success/error/info/warning), KHÔNG gọi thẳng được —
+    // gọi toast(...) sẽ ném TypeError và React huỷ luôn mọi setState của lượt bấm đó,
+    // nên nút trông như bị liệt.
+    toast.info('Đã mở phiếu sự cố — mô tả chênh lệch rồi bấm Gửi');
   };
 
   // Khi đổi tầng: nạp cổng IN của tầng đó, reset cổng đã chọn.
@@ -966,50 +971,72 @@ export default function StaffOperationsPage() {
   const [incFieldErrors, setIncFieldErrors] = useState({});
   const [incError, setIncError] = useState('');
   const [incSubmitting, setIncSubmitting] = useState(false);
-  const [incFile, setIncFile] = useState(null);
-  const [incPreviewUrl, setIncPreviewUrl] = useState('');
+  // NHIỀU ảnh, tối đa 5. Một tấm không đủ để đối chất: hư hại xe cần cả ảnh toàn cảnh lẫn
+  // ảnh cận vết. Máy chủ nhận qua multiplePhotos('photos', 5) và lưu các đường dẫn nối bằng
+  // dấu phẩy, xem từng tấm theo ?index=.
+  const INC_MAX_PHOTOS = 5;
+  const [incFiles, setIncFiles] = useState([]);        // [{ file, url }]
   const [previewIncidentPhoto, setPreviewIncidentPhoto] = useState(null);
 
+  // Nhận nhiều tệp một lượt, BỎ QUA tệp hỏng thay vì huỷ cả mẻ — chọn 5 tấm mà 1 tấm quá cỡ
+  // thì mất công chọn lại từ đầu.
   const handleIncFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('Chỉ chấp nhận ảnh (JPG, PNG, WebP...)');
-      e.target.value = '';
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';                                // reset để chọn lại đúng tệp đó vẫn nhận
+    if (!picked.length) return;
+
+    const room = INC_MAX_PHOTOS - incFiles.length;
+    if (room <= 0) {
+      toast.error(`Tối đa ${INC_MAX_PHOTOS} ảnh mỗi phiếu`);
       return;
     }
-    if (file.size > 3 * 1024 * 1024) {
-      toast.error('Ảnh không được vượt quá 3MB');
-      e.target.value = '';
-      return;
+
+    const good = [];
+    const bad = [];
+    for (const f of picked.slice(0, room)) {
+      if (!f.type.startsWith('image/')) { bad.push(`${f.name}: không phải ảnh`); continue; }
+      if (f.size > 3 * 1024 * 1024) { bad.push(`${f.name}: quá 3MB`); continue; }
+      good.push({ file: f, url: URL.createObjectURL(f) });
     }
-    setIncFile(file);
-    if (incPreviewUrl) URL.revokeObjectURL(incPreviewUrl);
-    setIncPreviewUrl(URL.createObjectURL(file));
+    if (picked.length > room) bad.push(`bỏ ${picked.length - room} tệp vì đã đủ ${INC_MAX_PHOTOS} ảnh`);
+    if (bad.length) toast.error(bad.join(' · '));
+    if (good.length) setIncFiles((prev) => [...prev, ...good]);
   };
 
-  const removeIncFile = () => {
-    setIncFile(null);
-    if (incPreviewUrl) {
-      URL.revokeObjectURL(incPreviewUrl);
-      setIncPreviewUrl('');
-    }
+  const removeIncFile = (idx) => {
+    setIncFiles((prev) => {
+      const target = prev[idx];
+      if (target?.url) URL.revokeObjectURL(target.url);   // thu hồi ngay, không đợi unmount
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
-  const openIncidentPhoto = async (inc) => {
+  const clearIncFiles = () => {
+    setIncFiles((prev) => {
+      prev.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+      return [];
+    });
+  };
+
+  // Máy chủ lưu nhiều đường dẫn nối bằng dấu phẩy trong image_path → đếm ra số tấm.
+  const incidentPhotoCount = (inc) =>
+    (inc?.image_path ? String(inc.image_path).split(',').filter(Boolean).length : 0);
+
+  // Phiếu có thể có nhiều ảnh → mở đúng tấm theo chỉ số, mặc định tấm đầu.
+  const openIncidentPhoto = async (inc, index = 0) => {
     try {
-      const url = await fetchIncidentPhotoBlobUrl(inc.incident_id);
-      setPreviewIncidentPhoto({ incident: inc, url });
+      const url = await fetchIncidentPhotoBlobUrl(inc.incident_id, index);
+      setPreviewIncidentPhoto({ incident: inc, url, index });
     } catch (err) {
       toast.error('Không tải được ảnh sự cố');
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (incPreviewUrl) URL.revokeObjectURL(incPreviewUrl);
-    };
-  }, [incPreviewUrl]);
+  // Dọn mọi blob còn treo khi rời trang — mỗi ảnh xem trước là một blob nằm trong bộ nhớ.
+  useEffect(() => () => {
+    incFiles.forEach((p) => p.url && URL.revokeObjectURL(p.url));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sự cố do chính staff này báo (BE lọc theo reporter khi role = Staff).
   const loadIncidents = async () => {
@@ -1043,14 +1070,19 @@ export default function StaffOperationsPage() {
       if (incForm.sessionId) {
         formData.append('sessionId', String(incForm.sessionId));
       }
-      if (incFile) {
-        formData.append('photo', incFile);
+      // Tên trường PHẢI là 'photos' và append NHIỀU LẦN cùng tên — đó là cách FormData biểu
+      // diễn một mảng. Máy chủ đọc bằng multiplePhotos('photos', 5) → req.files.
+      // Gửi 'photo' (số ít) thì req.files rỗng và phiếu tạo ra KHÔNG có ảnh, không báo lỗi gì.
+      for (const p of incFiles) {
+        formData.append('photos', p.file);
       }
 
       await incidentsApi.create(formData);
-      toast.success('Đã báo sự cố');
+      toast.success(incFiles.length
+        ? `Đã báo sự cố kèm ${incFiles.length} ảnh`
+        : 'Đã báo sự cố');
       setIncForm({ type: '', description: '', sessionId: '' });
-      removeIncFile();
+      clearIncFiles();
       setIncFieldErrors({});
       loadIncidents();
     } catch (err) {
@@ -1972,47 +2004,65 @@ export default function StaffOperationsPage() {
                 </select>
               </Field>
 
-              <Field label="Ảnh minh họa" hint="Đính kèm bằng chứng hình ảnh (không bắt buộc, ≤3MB)">
-                {incFile ? (
-                  <div className="relative mt-1 flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/30 p-3 transition-all duration-200">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      {incPreviewUrl && (
+              <Field
+                label={`Ảnh minh họa (${incFiles.length}/${INC_MAX_PHOTOS})`}
+                hint="Chọn được nhiều tấm một lượt — mỗi tấm ≤3MB. Không bắt buộc, nhưng hư hại xe nên có cả ảnh toàn cảnh lẫn ảnh cận."
+              >
+                {incFiles.length > 0 && (
+                  <div className="mt-1 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                    {incFiles.map((p, idx) => (
+                      <div
+                        key={p.url}
+                        className="group relative overflow-hidden rounded-xl border border-emerald-100 bg-emerald-50/30"
+                      >
                         <img
-                          src={incPreviewUrl}
-                          alt="Xem trước sự cố"
-                          className="h-12 w-16 rounded-lg object-cover border border-emerald-100 shadow-sm"
+                          src={p.url}
+                          alt={`Ảnh sự cố ${idx + 1}`}
+                          className="h-20 w-full object-cover"
                         />
-                      )}
-                      <div className="flex flex-col min-w-0">
-                        <span className="truncate text-sm text-slate-700 font-semibold">
-                          {incFile.name}
+                        <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 text-[10px] font-semibold text-white">
+                          {idx + 1}
                         </span>
-                        <span className="text-[10px] text-slate-400">
-                          {(incFile.size / 1024 / 1024).toFixed(2)} MB
+                        <button
+                          type="button"
+                          onClick={() => removeIncFile(idx)}
+                          className="absolute right-1 top-1 rounded-lg bg-white/90 p-1 text-slate-500 shadow-sm transition-colors hover:bg-rose-50 hover:text-rose-600"
+                          title={`Xoá ảnh ${idx + 1}`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="block truncate px-1.5 py-1 text-[10px] text-slate-500">
+                          {(p.file.size / 1024 / 1024).toFixed(2)} MB
                         </span>
                       </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={removeIncFile}
-                      className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                      title="Xóa ảnh"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    ))}
                   </div>
-                ) : (
-                  <label className="mt-1 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 py-6 text-sm text-slate-400 transition hover:border-brand hover:text-brand bg-slate-50/40 hover:bg-slate-50/80">
-                    <Upload className="h-5 w-5 text-slate-400 group-hover:text-brand transition-colors" />
-                    <span className="font-medium text-slate-500">Nhấp để chọn ảnh minh họa</span>
-                    <span className="text-[10px] text-slate-400">Chấp nhận JPG, PNG, WebP (tối đa 3MB)</span>
+                )}
+
+                {incFiles.length < INC_MAX_PHOTOS && (
+                  <label className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 py-6 text-sm text-slate-400 transition hover:border-brand hover:text-brand bg-slate-50/40 hover:bg-slate-50/80">
+                    <Upload className="h-5 w-5 text-slate-400 transition-colors group-hover:text-brand" />
+                    <span className="font-medium text-slate-500">
+                      {incFiles.length ? 'Thêm ảnh nữa' : 'Nhấp để chọn ảnh minh họa'}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      JPG, PNG, WebP · mỗi tấm ≤3MB · còn {INC_MAX_PHOTOS - incFiles.length} chỗ
+                    </span>
+                    {/* multiple: chọn cả mẻ trong một lần mở hộp thoại, khỏi bấm 5 lượt */}
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={handleIncFileChange}
                     />
                   </label>
+                )}
+
+                {incFiles.length >= INC_MAX_PHOTOS && (
+                  <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                    Đã đủ {INC_MAX_PHOTOS} ảnh — xoá bớt nếu muốn đổi tấm khác.
+                  </p>
                 )}
               </Field>
 
@@ -2160,7 +2210,11 @@ export default function StaffOperationsPage() {
                               className="mt-1 flex items-center gap-1 self-start rounded-lg border border-amber-200 bg-amber-50/50 px-2 py-1 text-[11px] font-semibold text-amber-700 hover:bg-amber-100/60 hover:text-amber-800 transition-all shadow-sm shrink-0"
                             >
                               <Images className="h-3.5 w-3.5" />
-                              <span>Ảnh đính kèm</span>
+                              <span>
+                                {incidentPhotoCount(inc) > 1
+                                  ? `${incidentPhotoCount(inc)} ảnh đính kèm`
+                                  : 'Ảnh đính kèm'}
+                              </span>
                             </button>
                           )}
                         </div>
@@ -2511,7 +2565,13 @@ export default function StaffOperationsPage() {
       <Modal
         open={Boolean(previewIncidentPhoto)}
         size="md"
-        title={`Ảnh sự cố (phiếu #${previewIncidentPhoto?.incident?.incident_id || ''})`}
+        title={(() => {
+          const id = previewIncidentPhoto?.incident?.incident_id || '';
+          const total = incidentPhotoCount(previewIncidentPhoto?.incident);
+          return total > 1
+            ? `Ảnh sự cố (phiếu #${id}) — ${(previewIncidentPhoto?.index ?? 0) + 1}/${total}`
+            : `Ảnh sự cố (phiếu #${id})`;
+        })()}
         onClose={() => {
           if (previewIncidentPhoto?.url) {
             URL.revokeObjectURL(previewIncidentPhoto.url);
@@ -2526,6 +2586,30 @@ export default function StaffOperationsPage() {
               alt="Ảnh sự cố"
               className="max-h-[60vh] w-full rounded-lg object-contain shadow-sm border border-slate-100"
             />
+            {/* Phiếu có thể kèm tới 5 ảnh — lật từng tấm, mỗi tấm là một lượt tải riêng
+                (máy chủ trả đúng tấm theo ?index=). */}
+            {incidentPhotoCount(previewIncidentPhoto.incident) > 1 && (
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {Array.from({ length: incidentPhotoCount(previewIncidentPhoto.incident) }).map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={i === previewIncidentPhoto.index}
+                    onClick={() => {
+                      URL.revokeObjectURL(previewIncidentPhoto.url);
+                      openIncidentPhoto(previewIncidentPhoto.incident, i);
+                    }}
+                    className={`h-7 w-7 rounded-lg border text-xs font-semibold transition-colors ${
+                      i === previewIncidentPhoto.index
+                        ? 'border-brand bg-brand text-white'
+                        : 'border-slate-200 text-slate-500 hover:border-brand hover:text-brand'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
             <p className="text-sm text-slate-500 italic text-center">
               {previewIncidentPhoto.incident?.description}
             </p>
