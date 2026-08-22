@@ -1,6 +1,6 @@
-import React, { useState } from "react";
-import { reservationsApi } from "../../api/axios"; // Đường dẫn import api của bạn
-import { toast } from "react-hot-toast"; // Hoặc thư viện thông báo bạn đang dùng
+import { useState } from "react";
+import { reservationsApi } from "../../api/reservations"; // Sửa đường dẫn import đúng api
+import { toast } from "react-hot-toast";
 
 export default function CancelReservationModal({
   isOpen,
@@ -10,16 +10,21 @@ export default function CancelReservationModal({
   onSuccess,
 }) {
   const [loading, setLoading] = useState(false);
-  const [bankInfo, setBankInfo] = useState({
-    bankName: "",
-    bankAccountNumber: "",
-    bankAccountHolder: "",
-  });
+  const [bankInfo, setBankInfo] = useState(() => ({
+    bankName: currentUser?.bankName || "",
+    bankAccountNumber: currentUser?.bankAccountNumber || "",
+    bankAccountHolder: currentUser?.bankAccountHolder || "",
+  }));
 
-  // Kiểm tra xem User đã có STK chưa
-  const hasBankInfo = Boolean(currentUser?.bankAccountNumber);
-  // Giả sử reservation có trường isRefundable hoặc bạn tự check giờ cutoff
-  const isRefundable = reservation?.isRefundable;
+  // Kiểm tra xem User đã có đủ thông tin ngân hàng chưa
+  const hasBankInfo = Boolean(
+    currentUser?.bankAccountNumber &&
+    currentUser?.bankName &&
+    currentUser?.bankAccountHolder
+  );
+
+  // Nhận biết đơn có được hoàn phí hay không (dựa trên status confirmed = đã thanh toán)
+  const isRefundable = reservation?.isRefundable ?? (reservation?.status === "confirmed");
 
   const handleCancel = async (e) => {
     e.preventDefault();
@@ -41,7 +46,7 @@ export default function CancelReservationModal({
       setLoading(true);
       // Gửi request hủy, kèm bankInfo nếu có nhập mới
       await reservationsApi.cancel(
-        reservation.id,
+        reservation.reservation_id || reservation.id,
         isRefundable && !hasBankInfo ? bankInfo : {},
       );
       toast.success("Hủy đặt chỗ thành công!");
@@ -62,7 +67,7 @@ export default function CancelReservationModal({
         <h2 className="text-xl font-bold mb-4">Xác nhận hủy đặt chỗ</h2>
         <p className="mb-4 text-gray-600">
           Bạn có chắc chắn muốn hủy đặt chỗ cho xe biển số{" "}
-          <strong>{reservation.plateNumber}</strong>?
+          <strong>{reservation.plate_number || reservation.plateNumber}</strong>?
         </p>
 
         {isRefundable && !hasBankInfo && (
