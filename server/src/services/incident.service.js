@@ -16,10 +16,18 @@ import {
 } from "../utils/pagination.js";
 import { enrichIncident } from "../utils/enumLabels.js";
 
-const LINK_REQUIRED_TYPES = ['lost_ticket', 'wrong_info', 'overstay', 'wrong_zone'];
+// Danh sách các loại sự cố BẮT BUỘC phải đính kèm với một thực thể (phiên đỗ xe, chỗ đỗ, vé...).
+// VD: Không thể báo "mất vé" (lost_ticket) mà không biết là vé của xe nào.
+const LINK_REQUIRED_TYPES = [
+  "lost_ticket",
+  "wrong_info",
+  "overstay",
+  "wrong_zone",
+];
 
+// Cấu hình Join bảng: Khi lấy dữ liệu sự cố, hệ thống sẽ tự động lấy thêm
+// thông tin về phiên đỗ (session), chỗ đỗ (slot), người dùng (user) và nhân viên liên quan.
 const incidentIncludes = [
-  // time_out để tính CỬA SỔ KHIẾU NẠI (phiếu lập trước hay sau khi xe rời bãi).
   {
     association: "session",
     attributes: ["session_id", "plate_number", "session_type", "time_out"],
@@ -31,8 +39,9 @@ const incidentIncludes = [
 ];
 
 /**
- * Ghi sự cố "nền" — KHÔNG BAO GIỜ ném lỗi (catch nuốt, trả null). Đây là ghi vết phụ, hỏng nó
- * không được phép làm hỏng nghiệp vụ chính đang gọi nó (quét cổng, thu tiền...).
+ * GHI SỰ CỐ NGẦM (Tự động từ hệ thống)
+ * Bao bọc bởi try-catch và cố ý return null nếu lỗi chứ KHÔNG throw error.
+ * Lý do: Việc ghi log sự cố (phụ) không được phép làm sập/chặn luồng chính (như mở cổng cho khách).
  */
 export const recordIncident = async (payload) => {
   try {
@@ -54,11 +63,16 @@ export const recordIncident = async (payload) => {
   }
 };
 
+/**
+ * NHÂN VIÊN TẠO SỰ CỐ (Hỗ trợ upload nhiều ảnh)
+ */
 export const createIncident = async (reporterId, data, file) => {
+  // Kiểm tra tính hợp lệ của loại sự cố
   if (!INCIDENT_TYPES.includes(data.type)) {
     throw new AppError("Invalid incident type", 400, "INCIDENT_INVALID");
   }
 
+  // Kiểm tra ràng buộc: Nếu thuộc nhóm bắt buộc phải có đối tượng liên kết
   if (LINK_REQUIRED_TYPES.includes(data.type)) {
     const hasLink =
       data.sessionId ||
@@ -75,23 +89,29 @@ export const createIncident = async (reporterId, data, file) => {
     }
   }
 
+  // Xử lý upload ảnh (hỗ trợ lưu nhiều ảnh)
   let imagePath = null;
-  const fileArray = Array.isArray(file) ? file : (file ? [file] : []);
+  // Đảm bảo file luôn là một mảng để dễ dùng vòng lặp, dù có 1 hay nhiều file
+  const fileArray = Array.isArray(file) ? file : file ? [file] : [];
+
   if (fileArray.length > 0) {
     const paths = [];
     for (const f of fileArray) {
-      const fileExt = path.extname(f.originalname) || '.jpg';
+      const fileExt = path.extname(f.originalname) || ".jpg";
+      // Tạo tên file ngẫu nhiên để không bị trùng lặp
       const relativePath = path.posix.join(
-        'incidents',
-        `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`
+        "incidents",
+        `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`,
       );
       const absolutePath = path.join(UPLOAD_ROOT, relativePath);
 
+      // Tạo thư mục nếu chưa có và lưu file
       await mkdir(path.dirname(absolutePath), { recursive: true });
       await writeFile(absolutePath, f.buffer);
-      paths.push(relativePath);
+      paths.push(relativePath); // Lưu lại đường dẫn
     }
-    imagePath = paths.join(',');
+    // Gộp nhiều đường dẫn thành 1 chuỗi, cách nhau bởi dấu phẩy để lưu vào 1 cột trong DB
+    imagePath = paths.join(",");
   }
 
   const incident = await Incident.create({
@@ -105,28 +125,31 @@ export const createIncident = async (reporterId, data, file) => {
     category: data.category || null,
     description: data.description.trim(),
     image_path: imagePath,
-    status: 'open',
+    status: "open",
   });
 
   return enrichIncident(await incident.reload({ include: incidentIncludes }));
 };
 
 /**
- * LỐ GIỜ — tự ghi sự cố khi checkout có thu phụ thu lố giờ.
+ * TỰ ĐỘNG GHI SỰ CỐ: Khi xe quá giờ (overstay) và bị thu phụ phí lúc ra cổng.
  */
 export const reportOverstayCharge = async (
   reporterId,
   { sessionId, userId, hours, fee },
 ) => {
   if (!sessionId) return null;
+
+  // Kiểm tra xem đã có phiếu lố giờ nào chưa giải quyết cho phiên này chưa
   const existing = await Incident.findOne({
     where: {
       session_id: sessionId,
       type: "overstay",
-      status: { [Op.ne]: "resolved" },
+      status: { [Op.ne]: "resolved" }, // khác 'resolved' (tức là còn đang open/investigating)
     },
   });
-  if (existing) return existing; // đã có báo cáo lố giờ đang mở → không tạo trùng
+  if (existing) return existing;
+
   const hrPart = hours > 0 ? ` (~${hours}h)` : "";
   return recordIncident({
     type: "overstay",
@@ -137,6 +160,9 @@ export const reportOverstayCharge = async (
   });
 };
 
+/**
+ * TẠO PHẢN HỒI TỪ KHÁCH HÀNG (Dành cho góp ý chung, không cần ảnh)
+ */
 export const createUserFeedback = async (userId, data) => {
   if (!FEEDBACK_CATEGORIES.includes(data.category)) {
     throw new AppError("Invalid feedback category", 400, "FEEDBACK_INVALID");
@@ -146,7 +172,7 @@ export const createUserFeedback = async (userId, data) => {
     session_id: data.sessionId || null,
     slot_id: null,
     user_id: userId,
-    reported_by: null,
+    reported_by: null, // Khách tự báo cáo nên reporter là null
     type: "feedback",
     category: data.category,
     description: data.description.trim(),
@@ -156,6 +182,9 @@ export const createUserFeedback = async (userId, data) => {
   return enrichIncident(await incident.reload({ include: incidentIncludes }));
 };
 
+/**
+ * LẤY DANH SÁCH SỰ CỐ (Dùng cho Admin/Staff xem tổng quan hoặc Khách hàng xem lịch sử cá nhân)
+ */
 export const listIncidents = async ({
   status,
   type,
@@ -171,14 +200,21 @@ export const listIncidents = async ({
   if (status) where.status = status;
   if (type) where.type = type;
   if (category) where.category = category;
+
+  // Phân quyền: Nhân viên chỉ thấy các sự cố do mình tạo
   if (roleName === ROLES.STAFF && reporterId) {
     where.reported_by = reporterId;
   }
-  // Lọc theo user gửi phản hồi (dùng cho /incidents/mine của User)
+  // Lọc lấy sự cố của riêng một khách hàng
   if (userId) where.user_id = userId;
+
+  // Lọc theo ngày tạo
   if (date) {
     where[Op.and] = [
-      sequelize.where(sequelize.fn('DATE', sequelize.col('incident.created_at')), date)
+      sequelize.where(
+        sequelize.fn("DATE", sequelize.col("incident.created_at")),
+        date,
+      ),
     ];
   }
 
@@ -186,7 +222,7 @@ export const listIncidents = async ({
   const result = await findAndPaginate(Incident, {
     where,
     include: incidentIncludes,
-    order: [["created_at", "DESC"]],
+    order: [["created_at", "DESC"]], // Sự cố mới nhất xếp trên
     ...pagination,
   });
 
@@ -198,6 +234,9 @@ export const listIncidents = async ({
   );
 };
 
+/**
+ * CẬP NHẬT TRẠNG THÁI SỰ CỐ (Đóng phiếu / Mở lại phiếu)
+ */
 export const updateIncidentStatus = async (
   id,
   status,
@@ -209,8 +248,7 @@ export const updateIncidentStatus = async (
 
   const patch = { status };
   if (status === "resolved") {
-    // ĐÓNG PHIẾU PHẢI CÓ KẾT LUẬN. Với khiếu nại hư hại xe, "đã xử lý" mà không nói xử lý
-    // ra sao là vô giá trị — khách khiếu nại lần hai thì không còn căn cứ nào để đối chiếu.
+    // RÀNG BUỘC CHẶT: Phải ghi rõ kết luận (resolution) thì mới cho phép đóng phiếu.
     const text = String(resolution || "").trim();
     if (!text) {
       throw new AppError(
@@ -221,22 +259,28 @@ export const updateIncidentStatus = async (
     }
     patch.resolved_by = resolverId;
     patch.resolved_at = new Date();
-    patch.resolution = text.slice(0, 500);
+    patch.resolution = text.slice(0, 500); // Giới hạn 500 ký tự
   } else {
+    // Nếu mở lại phiếu (reopen), phải xóa trắng các kết luận cũ
     patch.resolved_by = null;
     patch.resolved_at = null;
-    patch.resolution = null; // mở lại phiếu ⇒ kết luận cũ không còn hiệu lực
+    patch.resolution = null;
   }
+
   await incident.update(patch);
   return enrichIncident(await incident.reload({ include: incidentIncludes }));
 };
 
+/**
+ * TỰ ĐỘNG GHI SỰ CỐ: Xe dùng vé tháng nhưng quẹt thẻ ngoài khung giờ đăng ký.
+ */
 export const recordPassWindowViolation = async ({
   passId,
   userId,
   plateNumber,
   gateId,
 }) => {
+  // Tránh spam: Nếu lỗi này đã báo trong vòng 1 tiếng qua thì không báo lại
   const recent = await Incident.findOne({
     where: {
       pass_id: passId,
@@ -256,6 +300,9 @@ export const recordPassWindowViolation = async ({
   });
 };
 
+/**
+ * TỰ ĐỘNG GHI SỰ CỐ: Xe vào sai tầng so với vị trí được chỉ định.
+ */
 export const recordWrongFloorIncident = async ({
   gateFloorId,
   expectedFloorId,
@@ -275,6 +322,9 @@ export const recordWrongFloorIncident = async ({
   });
 };
 
+/**
+ * KHÁCH HÀNG TỰ BÁO CÁO SỰ CỐ (Hỗ trợ upload NHIỀU ảnh, VÀ BẮT BUỘC phải có ảnh)
+ */
 export const createCustomerIncident = async (
   userId,
   { description, type, sessionId, files },
@@ -284,12 +334,13 @@ export const createCustomerIncident = async (
   }
 
   let imagePaths = [];
+  // Bắt buộc phải cung cấp mảng files
   if (files && files.length > 0) {
     for (const file of files) {
       const fileExt = path.extname(file.originalname) || ".jpg";
       const relativePath = path.posix.join(
         "incidents",
-        `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`
+        `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${fileExt}`,
       );
       const absolutePath = path.join(UPLOAD_ROOT, relativePath);
 
@@ -298,6 +349,7 @@ export const createCustomerIncident = async (
       imagePaths.push(relativePath);
     }
   } else {
+    // Không có file ảnh nào -> Ném lỗi từ chối
     throw new AppError(
       "Vui lòng upload ảnh liên quan đến sự cố",
       400,
@@ -311,7 +363,7 @@ export const createCustomerIncident = async (
     reported_by: null,
     type: type || "other",
     description: description.trim(),
-    image_path: imagePaths.join(','),
+    image_path: imagePaths.join(","), // Gộp các đường dẫn ảnh lại bằng dấu phẩy
     status: "open",
   });
 
