@@ -24,6 +24,7 @@ import {
   Sliders,
   Trash2,
   Search,
+  Phone,
 } from "lucide-react";
 import { incidentsApi, fetchIncidentPhotoBlobUrl } from "../../api/incidents";
 import { sessionPhotosApi } from "../../api/sessionPhotos";
@@ -91,14 +92,14 @@ export default function IncidentsPage() {
   const [updatingId, setUpdatingId] = useState(null);
 
   // Xem bộ ảnh VÀO/RA của phiên gắn với phiếu
-  const [photoModal, setPhotoModal] = useState(null); // { incident, data } | null
+  const [photoModal, setPhotoModal] = useState(null);
   const [photoLoading, setPhotoLoading] = useState(false);
 
   // Xem ảnh khách hàng đính kèm khi gửi phản hồi / khiếu nại
-  const [customerPhotoModal, setCustomerPhotoModal] = useState(null); // { url, incident }
+  const [customerPhotoModal, setCustomerPhotoModal] = useState(null);
 
   // Đóng phiếu bắt buộc ghi kết luận.
-  const [resolveFor, setResolveFor] = useState(null); // incident đang chờ ghi kết luận
+  const [resolveFor, setResolveFor] = useState(null);
   const [resolutionText, setResolutionText] = useState("");
   const [resolving, setResolving] = useState(false);
 
@@ -123,9 +124,11 @@ export default function IncidentsPage() {
 
   const openCustomerPhoto = async (inc) => {
     try {
-      const paths = inc.image_path ? inc.image_path.split(',') : [];
+      const paths = inc.image_path ? inc.image_path.split(",") : [];
       const urls = await Promise.all(
-        paths.map((_, index) => fetchIncidentPhotoBlobUrl(inc.incident_id, index))
+        paths.map((_, index) =>
+          fetchIncidentPhotoBlobUrl(inc.incident_id, index),
+        ),
       );
       setCustomerPhotoModal({ urls, incident: inc, currentIndex: 0 });
     } catch {
@@ -169,7 +172,6 @@ export default function IncidentsPage() {
 
   const changeStatus = async (inc, status) => {
     if (status === inc.status) return;
-    // Đóng phiếu phải ghi kết luận → mở ô nhập trước, không gọi API ngay.
     if (status === "resolved") {
       setResolutionText("");
       setResolveFor(inc);
@@ -229,7 +231,6 @@ export default function IncidentsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Tiêu đề & Nút làm mới theo style PageHeader của AuditLogsPage */}
       <PageHeader
         title="Quản lý Sự cố & Khiếu nại"
         description="Giám sát, xử lý các sự cố vận hành từ nhân viên báo cáo và quản lý ý kiến đóng góp, khiếu nại đền bù từ phía khách hàng."
@@ -238,7 +239,6 @@ export default function IncidentsPage() {
 
       {error && <ErrorAlert message={error} className="mb-4 shadow-2xs" />}
 
-      {/* Thẻ thống kê tổng quan theo style của AuditLogsPage */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl border border-slate-200/80 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
@@ -281,7 +281,6 @@ export default function IncidentsPage() {
         </div>
       </div>
 
-      {/* Bộ lọc thiết kế dạng Card sang trọng theo style của AuditLogsPage */}
       <Card className="bg-white border border-slate-200/80 shadow-sm p-5 relative overflow-visible">
         <form
           onSubmit={handleApplyFilters}
@@ -399,7 +398,6 @@ export default function IncidentsPage() {
         </form>
       </Card>
 
-      {/* Bảng nhật ký sự cố với thiết kế phẳng hiện đại theo style của AuditLogsPage */}
       <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-(--shadow-card)">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -541,48 +539,88 @@ export default function IncidentsPage() {
                           <User className="h-4 w-4" />
                         </div>
                         <div className="text-xs">
-                          {inc.user?.full_name || inc.user?.username ? (
-                            <div>
-                              <p className="font-semibold text-slate-800">
-                                {inc.user.full_name || inc.user.username}
-                              </p>
-                              <p className="text-[10px] text-slate-400">
-                                Khách hàng
-                              </p>
-                            </div>
-                          ) : inc.reporter?.full_name ||
-                            inc.reporter?.username ? (
+                          {/* Ưu tiên kiểm tra nhân viên báo trước */}
+                          {inc.reporter?.full_name || inc.reporter?.username ? (
                             <div>
                               <p className="font-semibold text-slate-800">
                                 {inc.reporter.full_name ||
                                   inc.reporter.username}
                               </p>
-                              <p className="text-[10px] text-slate-400">
-                                Nhân viên
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  Nhân viên
+                                </span>
+                                {/* SĐT Nhân viên (Nếu có) */}
+                                {(inc.reporter.phone ||
+                                  inc.reporter.phone_number) && (
+                                  <>
+                                    <span className="text-slate-300">•</span>
+                                    <span className="text-[10px] text-slate-500 font-medium flex items-center gap-0.5">
+                                      <Phone className="h-2.5 w-2.5" />{" "}
+                                      {inc.reporter.phone ||
+                                        inc.reporter.phone_number}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ) : inc.user &&
+                            (inc.type === "feedback" || inc.image_path) ? (
+                            // Nếu không có nhân viên báo, mà là feedback hoặc có ảnh đính kèm -> Khách tự báo
+                            <div>
+                              <p className="font-semibold text-slate-800">
+                                {inc.user.full_name || inc.user.username}
                               </p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  Khách hàng
+                                </span>
+                              </div>
                             </div>
                           ) : (
+                            // Các trường hợp còn lại (Quá giờ, Sai tầng, Trùng phiên...)
                             <p className="text-slate-500 italic">Hệ thống</p>
                           )}
                         </div>
                       </div>
                     </td>
 
-                    {/* Cột 5: Liên quan */}
+                    {/* Cột 5: Liên quan (Nơi hiển thị biển số xe & SĐT Chủ xe) */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="space-y-1">
-                        {inc.session?.plate_number ? (
-                          <span className="inline-block font-mono font-bold bg-slate-150 px-2 py-0.5 rounded text-slate-800 text-xs border border-slate-200">
-                            {inc.session.plate_number}
-                          </span>
-                        ) : (
-                          <span className="text-slate-450 text-xs">—</span>
-                        )}
-                        {inc.slot?.slot_code && (
-                          <span className="block text-[11px] text-slate-400 font-semibold flex items-center gap-0.5">
-                            <MapPin className="h-3 w-3" />
-                            {inc.slot.slot_code}
-                          </span>
+                      <div className="space-y-2">
+                        {/* Box 1: Biển số & Chỗ đỗ */}
+                        <div className="space-y-1">
+                          {inc.session?.plate_number ? (
+                            <span className="inline-block font-mono font-bold bg-slate-150 px-2 py-0.5 rounded text-slate-800 text-xs border border-slate-200">
+                              {inc.session.plate_number}
+                            </span>
+                          ) : (
+                            <span className="text-slate-450 text-xs">—</span>
+                          )}
+                          {inc.slot?.slot_code && (
+                            <span className="block text-[11px] text-slate-400 font-semibold flex items-center gap-0.5">
+                              <MapPin className="h-3 w-3" />
+                              {inc.slot.slot_code}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Box 2: Thông tin SĐT CHỦ XE */}
+                        {inc.user && (
+                          <div className="pt-1.5 border-t border-slate-100">
+                            <span className="text-[9px] text-slate-400 uppercase tracking-wider font-semibold block mb-0.5">
+                              Thông tin chủ xe
+                            </span>
+                            <div className="text-[11px] text-slate-700 font-medium">
+                              {inc.user.full_name || inc.user.username}
+                            </div>
+                            {(inc.user.phone || inc.user.phone_number) && (
+                              <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                <Phone className="h-3 w-3 text-slate-400" />
+                                {inc.user.phone || inc.user.phone_number}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
@@ -652,7 +690,6 @@ export default function IncidentsPage() {
         </div>
       </div>
 
-      {/* Phân trang theo style của AuditLogsPage */}
       {pages > 1 && (
         <div className="mt-4 flex items-center justify-between text-sm text-slate-500 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <span>
@@ -683,7 +720,6 @@ export default function IncidentsPage() {
         </div>
       )}
 
-      {/* Bằng chứng ảnh của lượt gửi bị khiếu nại (bộ ảnh nhân viên chụp 5 góc lúc vào/ra) */}
       <Modal
         open={Boolean(photoModal)}
         size="lg"
@@ -715,7 +751,6 @@ export default function IncidentsPage() {
         )}
       </Modal>
 
-      {/* Modal xem ảnh do khách hàng đính kèm hoặc nhân viên đính kèm */}
       <Modal
         open={Boolean(customerPhotoModal)}
         size="lg"
@@ -726,7 +761,7 @@ export default function IncidentsPage() {
         }
         onClose={() => {
           if (customerPhotoModal?.urls) {
-            customerPhotoModal.urls.forEach(url => URL.revokeObjectURL(url));
+            customerPhotoModal.urls.forEach((url) => URL.revokeObjectURL(url));
           }
           setCustomerPhotoModal(null);
         }}
@@ -738,10 +773,14 @@ export default function IncidentsPage() {
                 <button
                   type="button"
                   className="absolute left-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
-                  onClick={() => setCustomerPhotoModal(prev => ({
-                    ...prev,
-                    currentIndex: (prev.currentIndex - 1 + prev.urls.length) % prev.urls.length
-                  }))}
+                  onClick={() =>
+                    setCustomerPhotoModal((prev) => ({
+                      ...prev,
+                      currentIndex:
+                        (prev.currentIndex - 1 + prev.urls.length) %
+                        prev.urls.length,
+                    }))
+                  }
                 >
                   &larr;
                 </button>
@@ -757,10 +796,12 @@ export default function IncidentsPage() {
                 <button
                   type="button"
                   className="absolute right-2 z-10 p-2 bg-black/50 hover:bg-black/80 text-white rounded-full transition-colors duration-200 focus:outline-none"
-                  onClick={() => setCustomerPhotoModal(prev => ({
-                    ...prev,
-                    currentIndex: (prev.currentIndex + 1) % prev.urls.length
-                  }))}
+                  onClick={() =>
+                    setCustomerPhotoModal((prev) => ({
+                      ...prev,
+                      currentIndex: (prev.currentIndex + 1) % prev.urls.length,
+                    }))
+                  }
                 >
                   &rarr;
                 </button>
@@ -768,7 +809,8 @@ export default function IncidentsPage() {
             </div>
             {customerPhotoModal.urls.length > 1 && (
               <p className="text-sm text-slate-500 font-semibold text-center">
-                Ảnh {customerPhotoModal.currentIndex + 1} / {customerPhotoModal.urls.length}
+                Ảnh {customerPhotoModal.currentIndex + 1} /{" "}
+                {customerPhotoModal.urls.length}
               </p>
             )}
             <div className="rounded-2xl bg-slate-50 p-4 text-xs text-slate-755 border border-slate-200 space-y-1.5 shadow-2xs">
@@ -789,7 +831,6 @@ export default function IncidentsPage() {
         )}
       </Modal>
 
-      {/* Đóng phiếu — bắt buộc ghi kết luận */}
       <Modal
         open={Boolean(resolveFor)}
         title={`Đóng phiếu sự cố #${resolveFor?.incident_id || ""}`}
