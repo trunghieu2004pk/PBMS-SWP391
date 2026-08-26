@@ -31,8 +31,14 @@ export const calculateFeeForMinutes = (minutes, pricingRule) => {
 };
 
 /**
- * Bảng giá đang hiệu lực tại `atTime`. atTime là tham số chứ không hardcode new Date():
- * Manager đổi giá hôm nay thì phiên vào từ hôm qua vẫn tính giá hôm qua — đổi giá không hồi tố.
+ * Bảng giá đang hiệu lực tại `atTime`.
+ *
+ * Chỗ thu tiền truyền `session.time_in` (KHÔNG phải giờ ra): khách nhìn bảng giá rồi mới
+ * quyết định gửi xe, nên đó là giá đã cam kết. Manager đổi giá hôm nay thì phiên vào từ hôm
+ * qua vẫn tính giá hôm qua — đổi giá không hồi tố.
+ *
+ * atTime là tham số chứ không hardcode new Date() cũng vì lẽ đó: tính lại một phiên đã đóng
+ * vẫn phải ra đúng con số cũ.
  */
 export const getEffectivePricingRule = async (vehicleTypeId, atTime = new Date()) => {
   const rule = await PricingRule.findOne({

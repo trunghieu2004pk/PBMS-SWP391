@@ -871,7 +871,10 @@ export const previewCheckoutFee = async (data) => {
   }
   const passCovered = passBillableMinutes === 0;
 
-  const pricingRule = await getEffectivePricingRule(session.vehicle_type_id, feeEnd);
+  // GIÁ TẠI THỜI ĐIỂM XE VÀO, không phải lúc ra. Khách nhìn bảng giá rồi mới quyết định gửi —
+  // đó là giá đã cam kết. Truyền feeEnd thì xe đỗ qua đêm sẽ bị áp giá manager đổi sáng hôm sau
+  // cho TRỌN lượt gửi (26 tiếng × chênh 2.000đ = 52.000đ), và ngược lại giá giảm thì bãi chịu.
+  const pricingRule = await getEffectivePricingRule(session.vehicle_type_id, session.time_in);
   let fee = passBillableMinutes != null
     ? calculateFeeForMinutes(passBillableMinutes, pricingRule)
     : calculateParkingFee(session.time_in, feeEnd, pricingRule);

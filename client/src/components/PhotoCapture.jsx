@@ -54,12 +54,20 @@ export default function PhotoCapture({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
+  // [DUYỆT] Đủ ảnh -> hiện CẢ 5 tấm một màn để soát.
+  //   shots     = bản xem trước theo góc, giữ trong RAM (không phải tải lại từ server)
+  //   reviewing = true -> đang ở màn duyệt, false -> đang ở khung chọn tệp
+  const [shots, setShots] = useState({});
+  const [reviewing, setReviewing] = useState(false);
 
   const canvasRef = useRef(null);
   const fileRef = useRef(null);
 
   const kind = kinds[index];
-  const isLast = index >= kinds.length - 1;
+  // Gửi tấm này xong là đủ góc chưa? Dùng thay cho "tấm cuối" vì lúc CHỤP LẠI thì
+  // góc đang sửa có thể nằm ở giữa mà gửi xong vẫn đủ.
+  const willComplete = new Set([...done, kind]).size === kinds.length;
+  const nextKind = kinds.find((k) => k !== kind && !done.includes(k));
 
   const pickFile = async (e) => {
     const file = e.target.files?.[0];
@@ -105,15 +113,20 @@ export default function PhotoCapture({
       );
       if (!blob) throw new Error('Không tạo được ảnh từ canvas');
 
-      const { data } = await sessionPhotosApi.upload(sessionId, { blob, phase, kind });
+      await sessionPhotosApi.upload(sessionId, { blob, phase, kind });
 
-      setDone((prev) => [...new Set([...prev, kind])]);
+      const nextDone = [...new Set([...done, kind])];
+      setDone(nextDone);
+      // Giữ lại bản xem trước để màn duyệt hiện được ngay, khỏi tải ảnh về từ server.
+      setShots((prev) => ({ ...prev, [kind]: preview }));
       setPreview(null);
       setWarning('');
       setFileName('');
 
-      if (isLast) onDone?.(data.data?.progress || null);
-      else setIndex((i) => i + 1);
+      // Đủ góc -> sang màn DUYỆT (kể cả khi vừa chụp lại 1 góc).
+      // Chưa đủ -> nhảy tới góc còn thiếu.
+      if (nextDone.length === kinds.length) setReviewing(true);
+      else setIndex(kinds.findIndex((k) => !nextDone.includes(k)));
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Gửi ảnh thất bại — thử lại.');
     } finally {
@@ -121,7 +134,92 @@ export default function PhotoCapture({
     }
   };
 
+  /** Chụp lại 1 góc: quay về khung chọn tệp của ĐÚNG góc đó. Gửi xong tự về màn duyệt. */
+  const retake = (k) => {
+    setIndex(kinds.indexOf(k));
+    setPreview(null);
+    setFileName('');
+    setWarning('');
+    setError('');
+    setReviewing(false);
+  };
+
   const progressPct = Math.round((done.length / kinds.length) * 100);
+
+  // ─────────── MÀN DUYỆT: đủ ảnh -> soát cả 5 tấm cùng lúc ───────────
+  // Chụp lại gửi LẠI cùng góc; BE ghi đè bản cũ (sessionPhoto.service.js:196) nên
+  // mỗi góc luôn chỉ có đúng MỘT bản ghi, không đẻ ảnh thừa.
+  if (reviewing) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+        <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="shrink-0 border-b border-slate-200 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">
+                  Soát lại {kinds.length} ảnh {PHASE_LABEL[phase]}
+                  {plateNumber ? ` — ${plateNumber}` : ''}
+                </h3>
+                <p className="text-sm text-slate-500">
+                  Tấm nào mờ, sai góc hay nhầm xe thì bấm{' '}
+                  <span className="font-medium text-slate-700">Chụp lại</span> ngay trên tấm đó.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Đóng"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-900 p-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {kinds.map((k) => (
+                <div key={k} className="overflow-hidden rounded-xl bg-black ring-1 ring-slate-700">
+                  <div className="flex aspect-4/3 items-center justify-center">
+                    <img
+                      src={shots[k]}
+                      alt={kindLabel(k)}
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 bg-slate-800 px-2.5 py-2">
+                    <span className="truncate text-xs font-medium text-slate-200">
+                      {kindLabel(k)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => retake(k)}
+                      className="flex shrink-0 items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs font-semibold text-white transition hover:bg-white/20"
+                    >
+                      <RotateCcw className="h-3 w-3" /> Chụp lại
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-slate-200 px-5 py-4">
+            <button
+              type="button"
+              onClick={() => onDone?.()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-3 font-semibold text-white hover:opacity-90"
+            >
+              <Check className="h-5 w-5" /> Xác nhận đủ {kinds.length} ảnh — cho xe qua cổng
+            </button>
+            <p className="mt-2 text-center text-xs text-slate-400">
+              Chụp lại ghi đè đúng góc đó — mỗi góc luôn chỉ có một ảnh.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
@@ -240,9 +338,9 @@ export default function PhotoCapture({
                 <Check className="h-4 w-4" />
                 {busy
                   ? 'Đang lưu…'
-                  : isLast
-                    ? 'Lưu ảnh cuối & hoàn tất'
-                    : `Dùng ảnh này → ${kindLabel(kinds[index + 1])}`}
+                  : willComplete
+                    ? `Lưu ảnh → soát lại cả ${kinds.length} tấm`
+                    : `Dùng ảnh này → ${kindLabel(nextKind)}`}
               </button>
             </div>
           ) : (
